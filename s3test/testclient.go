@@ -114,10 +114,10 @@ func parseByteRange(s string, contentLen int64) (int64, int64, error) {
 
 // FileContent stores the file content and the metadata.
 type FileContent struct {
-	content      testutil.ContentAt
-	sha256       string
-	lastModified time.Time
-	etag         string
+	Content      testutil.ContentAt
+	SHA256       string
+	LastModified time.Time
+	ETag         string
 }
 
 func (c *Client) newETag() string {
@@ -175,20 +175,30 @@ func (c *Client) GetFile(key string) (FileContent, bool) {
 	return f, ok
 }
 
-// SetFileContent defines the body for key.
+// MustGetFile returns the file contents and its metadata. Crashes the process
+// if the file is not found.
+func (c *Client) MustGetFile(key string) FileContent {
+	f, ok := c.GetFile(key)
+	if !ok {
+		panic(fmt.Sprintf("MustGetFile: key %s not found", key))
+	}
+	return f
+}
+
+// SetFile updates the file contents and the metadata.
 func (c *Client) SetFile(key string, content []byte, sha256 string) {
 	c.SetFileContentAt(key, &testutil.ByteContent{content}, sha256)
 }
 
-// SetFileContentReader sets the underlying TestReader for content.
+// SetFileContentAt sets the file  with the given content provider and metadata.
 func (c *Client) SetFileContentAt(key string, content testutil.ContentAt, sha256 string) {
 	c.m.Lock()
 	defer c.m.Unlock()
 	c.content[key] = FileContent{
-		content:      content,
-		sha256:       sha256,
-		lastModified: time.Now(),
-		etag:         c.newETag(),
+		Content:      content,
+		SHA256:       sha256,
+		LastModified: time.Now(),
+		ETag:         c.newETag(),
 	}
 }
 
@@ -196,8 +206,8 @@ func (c *Client) SetFileContentAt(key string, content testutil.ContentAt, sha256
 func (c *Client) GetFileContentBytes(key string) []byte {
 	c.m.Lock()
 	defer c.m.Unlock()
-	result := make([]byte, c.content[key].content.Size())
-	c.content[key].content.ReadAt(result, 0)
+	result := make([]byte, c.content[key].Content.Size())
+	c.content[key].Content.ReadAt(result, 0)
 	return result
 }
 
@@ -246,10 +256,10 @@ func (c *Client) setFileFromPartialContent(key string, uploadID string, parts []
 		panic(err)
 	}
 	c.content[key] = FileContent{
-		content:      &testutil.ByteContent{buf},
-		sha256:       sha,
-		lastModified: time.Now(),
-		etag:         r.etag,
+		Content:      &testutil.ByteContent{buf},
+		SHA256:       sha,
+		LastModified: time.Now(),
+		ETag:         r.etag,
 	}
 	delete(c.uploads, uploadID)
 }
@@ -258,8 +268,8 @@ func (c *Client) copyFile(src, dst string, meta map[string]*string) error {
 	c.m.Lock()
 	defer c.m.Unlock()
 	if sha256, ok := meta[awsContentSha256Key]; ok {
-		if sum := aws.StringValue(sha256); sum != c.content[src].sha256 {
-			return fmt.Errorf("copyfile %s->%s: sha256 checksum mismatch: %s <-> %s", src, dst, sum, c.content[src].sha256)
+		if sum := aws.StringValue(sha256); sum != c.content[src].SHA256 {
+			return fmt.Errorf("copyfile %s->%s: sha256 checksum mismatch: %s <-> %s", src, dst, sum, c.content[src].SHA256)
 		}
 	}
 	c.content[dst] = c.content[src]
@@ -305,11 +315,11 @@ func (c *Client) HeadObject(
 		return nil, awserr.New("NoSuchKey", "Object not found", nil)
 	}
 	output = &s3.HeadObjectOutput{
-		ContentLength: aws.Int64(f.content.Size()),
-		LastModified:  aws.Time(f.lastModified),
-		ETag:          aws.String(f.etag),
+		ContentLength: aws.Int64(f.Content.Size()),
+		LastModified:  aws.Time(f.LastModified),
+		ETag:          aws.String(f.ETag),
 		Metadata: map[string]*string{
-			awsContentSha256Key: aws.String(f.sha256),
+			awsContentSha256Key: aws.String(f.SHA256),
 		},
 	}
 	return output, nil
@@ -382,9 +392,9 @@ func (c *Client) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2O
 		if strings.HasPrefix(key, prefix) {
 			object := s3.Object{
 				Key:          aws.String(key),
-				Size:         aws.Int64(content.content.Size()),
-				LastModified: aws.Time(content.lastModified),
-				ETag:         aws.String(content.etag),
+				Size:         aws.Int64(content.Content.Size()),
+				LastModified: aws.Time(content.LastModified),
+				ETag:         aws.String(content.ETag),
 			}
 			output.Contents = append(output.Contents, &object)
 		}
@@ -555,17 +565,17 @@ func (c *Client) UploadPartCopyRequest(
 		c.t.Errorf("UploadPartCopyRequest source %f does not exist", src)
 	}
 	start := int64(0)
-	last := b.content.Size() - 1
+	last := b.Content.Size() - 1
 	if input.CopySourceRange != nil {
 		var err error
-		start, last, err = parseByteRange(aws.StringValue(input.CopySourceRange), b.content.Size())
+		start, last, err = parseByteRange(aws.StringValue(input.CopySourceRange), b.Content.Size())
 		if err != nil {
 			c.t.Errorf("UploadPartCopyRequest: %v", err)
 		}
 	}
 
 	data := make([]byte, last-start+1)
-	if _, err := b.content.ReadAt(data, start); err != nil {
+	if _, err := b.Content.ReadAt(data, start); err != nil {
 		c.t.Fatal(err)
 	}
 
@@ -639,28 +649,28 @@ func (c *Client) GetObjectRequest(
 		output.ETag = aws.String("")
 	} else {
 		start := int64(0)
-		last := b.content.Size() - 1
+		last := b.Content.Size() - 1
 		if input.Range != nil {
 			var err error
-			start, last, err = parseByteRange(aws.StringValue(input.Range), b.content.Size())
+			start, last, err = parseByteRange(aws.StringValue(input.Range), b.Content.Size())
 			if err != nil {
 				c.t.Errorf("GetObjectRequest: %v", err)
 			}
 		}
-		if (last + 1) >= b.content.Size() {
-			output.Body = ioutil.NopCloser(io.NewSectionReader(b.content, start, b.content.Size()-start))
+		if (last + 1) >= b.Content.Size() {
+			output.Body = ioutil.NopCloser(io.NewSectionReader(b.Content, start, b.Content.Size()-start))
 			if start > 0 {
-				last = b.content.Size() - 1
-				output.ContentRange = aws.String(fmt.Sprintf("bytes %d-%d/%d", start, last, b.content.Size()))
+				last = b.Content.Size() - 1
+				output.ContentRange = aws.String(fmt.Sprintf("bytes %d-%d/%d", start, last, b.Content.Size()))
 			}
-			output.ContentLength = aws.Int64(b.content.Size() - start)
+			output.ContentLength = aws.Int64(b.Content.Size() - start)
 		} else {
-			output.Body = ioutil.NopCloser(io.NewSectionReader(b.content, start, last-start+1))
-			output.ContentRange = aws.String(fmt.Sprintf("bytes %d-%d/%d", start, last, b.content.Size()))
+			output.Body = ioutil.NopCloser(io.NewSectionReader(b.Content, start, last-start+1))
+			output.ContentRange = aws.String(fmt.Sprintf("bytes %d-%d/%d", start, last, b.Content.Size()))
 			output.ContentLength = aws.Int64(last - start + 1)
 		}
-		output.LastModified = aws.Time(b.lastModified)
-		output.ETag = aws.String(b.etag)
+		output.LastModified = aws.Time(b.LastModified)
+		output.ETag = aws.String(b.ETag)
 	}
 	// c.t.Logf("GetObjectRequest output: %v", output)
 	req.Handlers.Send.PushBack(func(r *request.Request) {
@@ -779,10 +789,10 @@ func (c *Client) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error
 		output.LastModified = aws.Time(time.Time{})
 		output.ETag = aws.String("")
 	} else {
-		output.Body = ioutil.NopCloser(io.NewSectionReader(b.content, 0, b.content.Size()))
-		output.ContentLength = aws.Int64(b.content.Size())
-		output.LastModified = aws.Time(b.lastModified)
-		output.ETag = aws.String(b.etag)
+		output.Body = ioutil.NopCloser(io.NewSectionReader(b.Content, 0, b.Content.Size()))
+		output.ContentLength = aws.Int64(b.Content.Size())
+		output.LastModified = aws.Time(b.LastModified)
+		output.ETag = aws.String(b.ETag)
 	}
 	return &output, nil
 }
