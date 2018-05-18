@@ -382,21 +382,55 @@ func (c *Client) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2O
 		c.t.Errorf("ListObjectsV2 received unexpected bucket got: %s want %s", got, want)
 	}
 	prefix := aws.StringValue(input.Prefix)
+	prefixLen := len(prefix)
+	prefixGroupMap := make(map[string]*s3.CommonPrefix)
+
+	delimiter := aws.StringValue(input.Delimiter)
+	hasDelimiter := len(delimiter) > 0
 	output := &s3.ListObjectsV2Output{
 		IsTruncated: aws.Bool(false),
 	}
 
 	c.m.Lock()
 	defer c.m.Unlock()
+
 	for key, content := range c.content {
 		if strings.HasPrefix(key, prefix) {
-			object := s3.Object{
-				Key:          aws.String(key),
-				Size:         aws.Int64(content.Content.Size()),
-				LastModified: aws.Time(content.LastModified),
-				ETag:         aws.String(content.ETag),
+
+			firstDelimOffset := strings.Index(key, delimiter)
+
+			// handle common prefixes code
+			if hasDelimiter && firstDelimOffset >= 0 {
+				var delimOffset int
+				if firstDelimOffset >= prefixLen {
+					delimOffset = firstDelimOffset - prefixLen
+				} else {
+					rest := key[prefixLen:]
+					delimOffset = strings.Index(rest, delimiter)
+				}
+				if delimOffset >= 0 {
+
+					groupKey := key[prefixLen : prefixLen+delimOffset+1]
+					if _, present := prefixGroupMap[groupKey]; !present {
+						prefixGroupMap[groupKey] = &s3.CommonPrefix{
+							Prefix: aws.String(groupKey),
+						}
+					}
+				}
+			} else {
+
+				object := s3.Object{
+					Key:          aws.String(key),
+					Size:         aws.Int64(content.Content.Size()),
+					LastModified: aws.Time(content.LastModified),
+					ETag:         aws.String(content.ETag),
+				}
+				output.Contents = append(output.Contents, &object)
 			}
-			output.Contents = append(output.Contents, &object)
+		}
+
+		for _, cprefix := range prefixGroupMap {
+			output.CommonPrefixes = append(output.CommonPrefixes, cprefix)
 		}
 	}
 	return output, nil
