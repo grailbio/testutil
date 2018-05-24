@@ -104,12 +104,10 @@ func FailOnError(depth int, t interface {
 // Otherwise, it tries to build a path relative to $GRAIL.
 // If that fails, it returns the input path unchanged.
 //
-// relativePath will need to be prefixed with a Bazel workspace designation
-// if the paths go across workspaces. For example, "@grail//my/file/path" will
-// address a file relative to the $GRAIL root instead of relative to the
-// $GRAIL/go/src/grail.com path of the grailgo workspace.
-// Only certain workspaces are recognized when running tests for the Go tool.
-// Add more workspaces as necessary in the map below.
+// relativePath will need to be prefixed with a Bazel workspace designation if
+// the paths go across workspaces. Only certain workspaces are recognized when
+// running tests for the Go tool.  Add more workspaces as necessary in the map
+// below.
 func GetFilePath(relativePath string) string {
 	grailPath, hasGrailPath := os.LookupEnv("GRAIL")
 	bazelPath, hasBazelPath := os.LookupEnv("TEST_SRCDIR")
@@ -132,9 +130,8 @@ func GetFilePath(relativePath string) string {
 		// Provide a mapping from bazel workspaces to a $GRAIL-relative path.
 		// TODO(treaster): Figure out how to do this mapping dynamically.
 		knownWorkspaces := map[string]string{
-			"":        "",
-			"grail":   "",
-			"grailgo": "go/src/grail.com",
+			"":      "",
+			"grail": "",
 		}
 		expandedPath, hasWorkspace := knownWorkspaces[workspace]
 		if !hasWorkspace {
@@ -234,17 +231,17 @@ func IsBazel() bool {
 
 // GoExecutable returns the Go executable for "path", or builds the executable
 // and returns its path. The latter happens when the caller is not running under
-// Bazel. "path" must start with "@grailgo//".  For example,
-// "@grailgo//cmd/bio-metrics/bio-metrics".
+// Bazel. "path" must start with "//go/src/grail.com/".  For example,
+// "//go/src/grail.com/cmd/bio-metrics/bio-metrics".
 func GoExecutable(t interface {
 	Fatalf(string, ...interface{})
 },
 	sh *gosh.Shell,
 	path string) string {
-	re := regexp.MustCompile("^@grailgo//(.*/([^/]+))/([^/]+)$")
+	re := regexp.MustCompile("^//go/src/(.*/([^/]+))/([^/]+)$")
 	match := re.FindStringSubmatch(path)
 	if match == nil || match[2] != match[3] {
-		t.Fatalf("%v: target must be of format \"@grailgo//path/target/target\"",
+		t.Fatalf("%v: target must be of format \"//go/src/path/target/target\"",
 			path)
 	}
 	if IsBazel() {
@@ -252,7 +249,7 @@ func GoExecutable(t interface {
 		if _, err := os.Stat(expandedPath); err == nil {
 			return expandedPath
 		}
-		pattern := GetFilePath(fmt.Sprintf("@grailgo//%s/*/%s", match[1], match[2]))
+		pattern := GetFilePath(fmt.Sprintf("//go/src/%s/*/%s", match[1], match[2]))
 		paths, err := filepath.Glob(pattern)
 		if err != nil {
 			t.Fatalf("glob %v: %v", pattern, err)
