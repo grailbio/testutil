@@ -397,41 +397,34 @@ func (c *Client) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2O
 	for key, content := range c.content {
 		if strings.HasPrefix(key, prefix) {
 
-			firstDelimOffset := strings.Index(key, delimiter)
+			nextDelimOffset := strings.Index(key[prefixLen:], delimiter)
 
 			// handle common prefixes code
-			if hasDelimiter && firstDelimOffset >= 0 {
-				var delimOffset int
-				if firstDelimOffset >= prefixLen {
-					delimOffset = firstDelimOffset - prefixLen
-				} else {
-					rest := key[prefixLen:]
-					delimOffset = strings.Index(rest, delimiter)
-				}
-				if delimOffset >= 0 {
+			if hasDelimiter && nextDelimOffset >= 0 {
 
-					groupKey := key[prefixLen : prefixLen+delimOffset+1]
-					if _, present := prefixGroupMap[groupKey]; !present {
-						prefixGroupMap[groupKey] = &s3.CommonPrefix{
-							Prefix: aws.String(groupKey),
-						}
+				groupKey := key[:prefixLen+nextDelimOffset+1]
+				if _, present := prefixGroupMap[groupKey]; !present {
+					prefixGroupMap[groupKey] = &s3.CommonPrefix{
+						Prefix: aws.String(groupKey),
 					}
+					// c.t.Logf("Adding prefix group map for key %s, for %d total",groupKey,len(prefixGroupMap))
 				}
 			} else {
 
-				object := s3.Object{
+				object := &s3.Object{
 					Key:          aws.String(key),
 					Size:         aws.Int64(content.Content.Size()),
 					LastModified: aws.Time(content.LastModified),
 					ETag:         aws.String(content.ETag),
 				}
-				output.Contents = append(output.Contents, &object)
+				output.Contents = append(output.Contents, object)
+				// c.t.Logf("Adding file %s, for %d total",key,len(output.Contents))
 			}
 		}
 
-		for _, cprefix := range prefixGroupMap {
-			output.CommonPrefixes = append(output.CommonPrefixes, cprefix)
-		}
+	}
+	for _, cprefix := range prefixGroupMap {
+		output.CommonPrefixes = append(output.CommonPrefixes, cprefix)
 	}
 	return output, nil
 }
@@ -596,7 +589,7 @@ func (c *Client) UploadPartCopyRequest(
 	src := strings.TrimPrefix(source, c.bucket+"/")
 	b, ok := c.GetFile(src)
 	if !ok {
-		c.t.Errorf("UploadPartCopyRequest source %f does not exist", src)
+		c.t.Errorf("UploadPartCopyRequest source %s does not exist", src)
 	}
 	start := int64(0)
 	last := b.Content.Size() - 1

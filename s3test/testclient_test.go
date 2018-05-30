@@ -43,6 +43,13 @@ func populateS3(t *testing.T, client *s3test.Client) []string {
 		}
 
 	}
+	// now add some files
+	for i := 0; i < 3; i++ {
+		key := fmt.Sprintf("knights/sword%d", i)
+		client.SetFile(key, content, string(hashValue))
+		manifest = append(manifest, key)
+		t.Logf("Populating %s", key)
+	}
 	return manifest
 }
 
@@ -73,7 +80,7 @@ func testClientListOjbects(t *testing.T, client *s3test.Client, manifest []strin
 
 	if expPrefixes == 0 {
 		if result.CommonPrefixes != nil && len(result.CommonPrefixes) > 0 {
-			for val := range result.CommonPrefixes {
+			for _, val := range result.CommonPrefixes {
 				t.Logf("Prefix: %s", val)
 			}
 			t.Errorf("expected no prefixes, but we have %d instead: ",
@@ -114,12 +121,12 @@ func TestClientListObjectsV2(t *testing.T) {
 
 	// only 1/2 of the objects start with knights/w
 	t.Run("half-match", func(t *testing.T) {
-		testClientListOjbects(t, mockS3Client, manifest, "knights/w", "", len(manifest)/2, 0)
+		testClientListOjbects(t, mockS3Client, manifest, "knights/w", "", (len(manifest)-3)/2, 0)
 	})
 
 	// with a delimiter, there are knights/who, knights/what, knights/when and knights/where
 	t.Run("four directories", func(t *testing.T) {
-		testClientListOjbects(t, mockS3Client, manifest, "knights/w", "/", 0, 4)
+		testClientListOjbects(t, mockS3Client, manifest, "knights/", "/", 3, 4)
 	})
 
 	// corner case -- one group of "/"
