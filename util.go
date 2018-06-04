@@ -109,37 +109,15 @@ func FailOnError(depth int, t interface {
 // running tests for the Go tool.  Add more workspaces as necessary in the map
 // below.
 func GetFilePath(relativePath string) string {
-	grailPath, hasGrailPath := os.LookupEnv("GRAIL")
-	bazelPath, hasBazelPath := os.LookupEnv("TEST_SRCDIR")
-	workspace, hasWorkspace := os.LookupEnv("TEST_WORKSPACE")
-
-	isGrail := hasGrailPath
-	isBazel := hasBazelPath && hasWorkspace
-
-	workspaceFromPath := regexp.MustCompile("@([^/]*)//(.*)")
-	matches := workspaceFromPath.FindStringSubmatch(relativePath)
-	if len(matches) > 0 {
-		workspace = matches[1]
-		relativePath = matches[2]
+	if strings.HasPrefix(relativePath, "//") {
+		relativePath = relativePath[1:]
 	}
-
-	switch {
-	case isBazel:
-		return filepath.Join(bazelPath, workspace, relativePath)
-	case isGrail:
-		// Provide a mapping from bazel workspaces to a $GRAIL-relative path.
-		// TODO(treaster): Figure out how to do this mapping dynamically.
-		knownWorkspaces := map[string]string{
-			"":      "",
-			"grail": "",
-		}
-		expandedPath, hasWorkspace := knownWorkspaces[workspace]
-		if !hasWorkspace {
-			panic(fmt.Sprintf("Unrecognized workspace %q", workspace))
-		}
-		return filepath.Join(grailPath, expandedPath, relativePath)
+	if bazelPath, ok := os.LookupEnv("TEST_SRCDIR"); ok {
+		return filepath.Join(bazelPath, os.Getenv("TEST_WORKSPACE"), relativePath)
 	}
-
+	if grailPath, ok := os.LookupEnv("GRAIL"); ok {
+		return filepath.Join(grailPath, relativePath)
+	}
 	panic("Unexpected test environment. Should be running with either $GRAIL or in a bazel build space.")
 	return ""
 }
@@ -164,7 +142,7 @@ func GetTmpDir() string {
 
 // WriteTmp writes the supplied contents to a temporary file and returns the
 // name of that file.
-func WriteTmp(t interface {
+func writeTmp(t interface {
 	Fatalf(string, ...interface{})
 }, depth int, contents string) string {
 	f, err := ioutil.TempFile("", "WriteTmp-")
@@ -200,7 +178,7 @@ func CompareFile(t interface {
 		got, want = strip(got), strip(want)
 	}
 	if got != want {
-		gf := WriteTmp(t, depth+1, got)
+		gf := writeTmp(t, depth+1, got)
 		defer os.Remove(gf)
 		cmd := exec.Command("diff", "-u", gf, fn)
 		diff, _ := cmd.CombinedOutput()

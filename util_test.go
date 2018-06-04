@@ -40,22 +40,18 @@ func clearEnvWithReset(t *testing.T, key string) func() {
 
 func TestGetFilePathInGrailEnv(t *testing.T) {
 	defer clearEnvWithReset(t, "TEST_SRCDIR")()
-	defer clearEnvWithReset(t, "TEST_WORKSPACE")()
-
 	grailPath := "/grail"
 	defer setEnvWithReset(t, "GRAIL", grailPath)()
 	require.Equal(t, filepath.Join(grailPath, "foo/bar/baz"), testutil.GetFilePath("foo/bar/baz"))
 }
 
 func TestGetFilePathInBazelEnv(t *testing.T) {
-	defer clearEnvWithReset(t, "GRAIL")()
-
+	defer clearEnvWithReset(t, "TEST_SRCDIR")()
 	bazelSrc := "/bazel_src"
 	defer setEnvWithReset(t, "TEST_SRCDIR", bazelSrc)()
 
 	bazelSpace := "/bazel_space"
 	defer setEnvWithReset(t, "TEST_WORKSPACE", bazelSpace)()
 
-	require.Equal(t, filepath.Join(bazelSrc, "grail/foo/bar/baz"), testutil.GetFilePath("@grail//foo/bar/baz"))
-	require.Equal(t, filepath.Join(bazelSrc, "bar/foo/bar/baz"), testutil.GetFilePath("@bar//foo/bar/baz"))
+	require.Equal(t, filepath.Join(bazelSrc, bazelSpace, "//foo/bar/baz"), testutil.GetFilePath("//foo/bar/baz"))
 }
