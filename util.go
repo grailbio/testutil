@@ -238,5 +238,12 @@ func GoExecutable(t interface {
 		return paths[0]
 	}
 	tempdir := sh.MakeTempDir()
-	return gosh.BuildGoPkg(sh, tempdir, "grail.com/"+match[1])
+	saved := sh.ContinueOnError
+	sh.ContinueOnError = true
+	xpath := gosh.BuildGoPkg(sh, tempdir, match[1])
+	if sh.Err != nil {
+		t.Fatalf("failed to build %v", path)
+	}
+	sh.ContinueOnError = saved
+	return xpath
 }
