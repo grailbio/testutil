@@ -129,6 +129,11 @@ func TestClientListObjectsV2(t *testing.T) {
 		testClientListOjbects(t, mockS3Client, manifest, "knights/", "/", 3, 4)
 	})
 
+	// with a delimiter, there are knights/who, knights/what, knights/when and knights/where
+	t.Run("no trailing slash", func(t *testing.T) {
+		testClientListOjbects(t, mockS3Client, manifest, "knights", "/", 0, 1)
+	})
+
 	// corner case -- one group of "/"
 	t.Run("entire-prefix", func(t *testing.T) {
 		testClientListOjbects(t, mockS3Client, manifest, "knights/what", "/", 0, 1)
