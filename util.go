@@ -5,6 +5,7 @@
 package testutil
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -14,8 +15,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
-
-	"v.io/x/lib/gosh"
 )
 
 // MockTB is a mock implementation of gosh.TB. FailNow and Fatalf will
@@ -119,7 +118,6 @@ func GetFilePath(relativePath string) string {
 		return filepath.Join(grailPath, relativePath)
 	}
 	panic("Unexpected test environment. Should be running with either $GRAIL or in a bazel build space.")
-	return ""
 }
 
 // GetTmpDir will retrieve/generate a test-specific directory appropriate
@@ -149,8 +147,10 @@ func writeTmp(t interface {
 	if err != nil {
 		t.Fatalf("%v: %v", Caller(depth+1), err)
 	}
-	defer f.Close()
-	if _, err := f.Write([]byte(fmt.Sprintf("%s", contents))); err != nil {
+	if _, err := f.Write([]byte(contents)); err != nil {
+		t.Fatalf("%v: %v", Caller(depth+1), err)
+	}
+	if err := f.Close(); err != nil {
 		t.Fatalf("%v: %v", Caller(depth+1), err)
 	}
 	return f.Name()
@@ -166,7 +166,6 @@ func CompareFile(t interface {
 	Fatalf(string, ...interface{})
 	Logf(string, ...interface{})
 	Errorf(string, ...interface{})
-	FailNow()
 }, depth int, contents string, golden string, strip func(string) string) {
 	fn := filepath.Join("testdata", golden)
 	data, err := ioutil.ReadFile(fn)
@@ -179,7 +178,7 @@ func CompareFile(t interface {
 	}
 	if got != want {
 		gf := writeTmp(t, depth+1, got)
-		defer os.Remove(gf)
+		defer os.Remove(gf) // nolint: errcheck
 		cmd := exec.Command("diff", "-u", gf, fn)
 		diff, _ := cmd.CombinedOutput()
 		t.Logf("%v: got %v", Caller(depth+1), got)
@@ -190,10 +189,9 @@ func CompareFile(t interface {
 
 // CompareFiles compares 2 files in the same manner as CompareFile.
 func CompareFiles(t interface {
-	Fatalf(string, ...interface{})
 	Logf(string, ...interface{})
+	Fatalf(string, ...interface{})
 	Errorf(string, ...interface{})
-	FailNow()
 }, depth int, a, golden string, strip func(string) string) {
 	ac, err := ioutil.ReadFile(a)
 	if err != nil {
@@ -214,7 +212,6 @@ func IsBazel() bool {
 func GoExecutable(t interface {
 	Fatalf(string, ...interface{})
 },
-	sh *gosh.Shell,
 	path string) string {
 	re := regexp.MustCompile("^//go/src/(.*/([^/]+))/([^/]+)$")
 	match := re.FindStringSubmatch(path)
@@ -237,13 +234,17 @@ func GoExecutable(t interface {
 		}
 		return paths[0]
 	}
-	tempdir := sh.MakeTempDir()
-	saved := sh.ContinueOnError
-	sh.ContinueOnError = true
-	xpath := gosh.BuildGoPkg(sh, tempdir, match[1])
-	if sh.Err != nil {
-		t.Fatalf("failed to build %v", path)
+	pkg := match[1]
+	hashString := func(s string) string {
+		b := sha256.Sum256([]byte(s))
+		return fmt.Sprintf("%x", b[:16])
 	}
-	sh.ContinueOnError = saved
+	tempDir := fmt.Sprintf("/tmp/go_build/%s", hashString(os.Getenv("GOPATH")+pkg))
+	os.MkdirAll(tempDir, 0700) // nolint: errcheck
+	xpath := filepath.Join(tempDir, filepath.Base(pkg))
+	cmd := exec.Command("go", "build", "-o", xpath, pkg)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go build %s: %v", pkg, err)
+	}
 	return xpath
 }
