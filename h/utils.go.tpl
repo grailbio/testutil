@@ -1,5 +1,6 @@
 // Package PACKAGE provides helper functions for unittests, in a style of
-// hamcrest, gtest and gmock.
+// hamcrest, gtest and gmock. It is a thin wrapper around the "h" package (
+// https://godoc.org/github.com/grailbio/testutil/h).
 //
 // Features:
 //
@@ -19,9 +20,9 @@
 //   )
 //
 //   func TestFoo(t* testing.T) {
-//   	 assert.EQ(t, foo.DoFoo(), 10)
-//   	 assert.LT(t, foo.DoBar(), 15)
-//   	 assert.EQ(t, foo.DoBar(), []int{1, 2})
+//   	 PACKAGE.EQ(t, foo.DoFoo(), 10)
+//   	 PACKAGE.LT(t, foo.DoBar(), 15)
+//   	 PACKAGE.EQ(t, foo.DoBar(), []int{1, 2})
 //   }
 //
 // The only difference between packages expect and assert is that expect.XXX
@@ -36,12 +37,12 @@
 // github.com/grailbio/testutil/h package. Package PACKAGE is just a thin wrapper
 // around the matchers defined in h.
 //
-// assert.That supports fine-grain expectation matching, in the style of
+// PACKAGE.That supports fine-grain expectation matching, in the style of
 // gmock(https://github.com/google/googletest/blob/master/googlemock/docs/CheatSheet.md)
 // and hamcrest(https://en.wikipedia.org/wiki/Hamcrest).  For example:
 //
 //   	 // Check that every element in the slice is < 10.
-//   	 assert.That(t, []int{15, 16}, h.Each(h.LT(10)))
+//   	 PACKAGE.That(t, []int{15, 16}, h.Each(h.LT(10)))
 //
 // Package testutil/h defines many common matchers.
 //
@@ -52,15 +53,15 @@
 //
 // - h.Contains checks if a slice or an array contains a given value or matcher.
 //
-//   	 assert.That(t, []int{15, 16}, h.Contains(15))
-//   	 assert.That(t, []int{15, 16}, h.Contains(h.LE(15)))
+//   	 PACKAGE.That(t, []int{15, 16}, h.Contains(15))
+//   	 PACKAGE.That(t, []int{15, 16}, h.Contains(h.LE(15)))
 //
 // - h.Each checks if every value of a slice or an array matches a given value or matcher.
 //
 // - h.Not(m) negates the match result of m.
 //
 //   	 // Check that every element in the slice doesn't start with "b"
-//   	 assert.That(t, []int{"abc", "abd"}, h.Each(h.Not(h.HasPrefix("b"))))
+//   	 PACKAGE.That(t, []int{"abc", "abd"}, h.Each(h.Not(h.HasPrefix("b"))))
 //
 //
 // - h.Regexp, h.HasPrefix, h.HasSubstr, h.HasSuffix checks properties of a string.
@@ -72,8 +73,11 @@ import (
 	"github.com/grailbio/testutil/h"
 )
 
-// EQ checks if the two values are equal.  If msgs... is not empty, msgs[0] must
-// be a format string, and they are printed using fmt.Printf on error.
+// EQ checks if the two values are equal. It is a shorthand for That(got,
+// h.EQ(want), ...).
+//
+// If msgs... is not empty, msgs[0] must be a format string, and they are
+// printed using fmt.Printf on error.
 func EQ(t TB, got, want interface{}, msgs ...interface{}) {
 	That(t, got, h.EQ(want), msgs...)
 }

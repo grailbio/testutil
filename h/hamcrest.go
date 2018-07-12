@@ -17,7 +17,7 @@ import (
 	"strings"
 )
 
-// Status is the match result.
+// Status represents the match result.
 type Status int
 
 const (
@@ -33,6 +33,7 @@ const (
 	Mismatch
 )
 
+// String returns a human-readable description.
 func (s Status) String() string {
 	msgs := []string{"DomainError", "Match", "Mismatch"}
 	return msgs[s]
@@ -576,7 +577,7 @@ func ElementsAre(w ...interface{}) *Matcher {
 }
 
 // WhenSorted wraps another matcher that matches against a sequence, most often
-// ElementsAre.  IT sorts the target value using go's "<" operator, then passes
+// ElementsAre.  It sorts the target value using go's "<" operator, then passes
 // the resulting sequence to the underlying matcher. The target value must be an
 // array, slice, or string.
 //
@@ -779,7 +780,7 @@ func Panics(m *Matcher) *Matcher {
 		if gotV.Kind() != reflect.Func {
 			return NewErrorf(got, "Panics: value must be a function")
 		}
-		if t := gotV.Type(); t.NumIn() != 0 || t.NumIn() != 0 {
+		if t := gotV.Type(); t.NumIn() != 0 || t.NumOut() != 0 {
 			return NewErrorf(got, "Panics: value must be a function without input args and no output")
 		}
 

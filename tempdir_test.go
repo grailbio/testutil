@@ -15,21 +15,6 @@ import (
 	"github.com/grailbio/testutil"
 )
 
-func TestTMPDir(t *testing.T) {
-	const to = "foo"
-	was := testutil.SetTMPDIR(to)
-	if got, want := os.Getenv("TMPDIR"), to; got != want {
-		t.Errorf("got %v, want %v", got, want)
-	}
-	is := testutil.SetTMPDIR(was)
-	if got, want := os.Getenv("TMPDIR"), was; got != want {
-		t.Errorf("got %v, want %v", got, want)
-	}
-	if got, want := is, to; got != want {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
 func TestTempDir(t *testing.T) {
 	var dummy testutil.Testing = t
 	_ = dummy

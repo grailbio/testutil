@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"testing"
 )
 
 // MockTB is a mock implementation of gosh.TB. FailNow and Fatalf will
@@ -48,16 +49,6 @@ func Caller(depth int) string {
 	return fmt.Sprintf("%s:%d", filepath.Base(file), line)
 }
 
-// ExpectedError tests for an expected error and associated error message.
-func ExpectedError(t interface {
-	Errorf(string, ...interface{})
-}, depth int, err error, msg string) {
-	_, file, line, _ := runtime.Caller(depth + 1)
-	if err == nil || !strings.Contains(err.Error(), msg) {
-		t.Errorf("%v:%v: got %v, want an error containing %v", filepath.Base(file), line, err, msg)
-	}
-}
-
 // NoCleanupOnError avoids calling the supplied cleanup function when
 // a test has failed or paniced. The Log function is called with args
 // when the test has failed and is typically used to log the location
@@ -66,11 +57,7 @@ func ExpectedError(t interface {
 //
 // tempdir, cleanup := testutil.TempDir(t, "", "scandb-state-")
 // defer testutil.NoCleanupOnError(t, cleanup, "tempdir:", tempdir)
-func NoCleanupOnError(t interface {
-	Fail()
-	Log(...interface{})
-	Failed() bool
-}, cleanup func(), args ...interface{}) {
+func NoCleanupOnError(t testing.TB, cleanup func(), args ...interface{}) {
 	if t.Failed() {
 		if len(args) > 0 {
 			t.Log(args...)
@@ -86,16 +73,6 @@ func NoCleanupOnError(t interface {
 		return
 	}
 	cleanup()
-}
-
-// FailOnError will call Fatal if the supplied error parameter is non-nil,
-// with the location of its caller at the specified depth and the non-nil error.
-func FailOnError(depth int, t interface {
-	Fatal(...interface{})
-}, err error) {
-	if err != nil {
-		t.Fatal(Caller(depth), err)
-	}
 }
 
 // GetFilePath detects if we're running under "bazel test". If so, it builds
@@ -140,9 +117,7 @@ func GetTmpDir() string {
 
 // WriteTmp writes the supplied contents to a temporary file and returns the
 // name of that file.
-func writeTmp(t interface {
-	Fatalf(string, ...interface{})
-}, depth int, contents string) string {
+func writeTmp(t testing.TB, depth int, contents string) string {
 	f, err := ioutil.TempFile("", "WriteTmp-")
 	if err != nil {
 		t.Fatalf("%v: %v", Caller(depth+1), err)
@@ -162,11 +137,7 @@ func writeTmp(t interface {
 // function can be used to cleanup the contents to be compared to remove
 // things such as dates or other spurious information that's not relevant
 // to the comparison.
-func CompareFile(t interface {
-	Fatalf(string, ...interface{})
-	Logf(string, ...interface{})
-	Errorf(string, ...interface{})
-}, depth int, contents string, golden string, strip func(string) string) {
+func CompareFile(t testing.TB, depth int, contents string, golden string, strip func(string) string) {
 	fn := filepath.Join("testdata", golden)
 	data, err := ioutil.ReadFile(fn)
 	if err != nil {
@@ -188,11 +159,7 @@ func CompareFile(t interface {
 }
 
 // CompareFiles compares 2 files in the same manner as CompareFile.
-func CompareFiles(t interface {
-	Logf(string, ...interface{})
-	Fatalf(string, ...interface{})
-	Errorf(string, ...interface{})
-}, depth int, a, golden string, strip func(string) string) {
+func CompareFiles(t testing.TB, depth int, a, golden string, strip func(string) string) {
 	ac, err := ioutil.ReadFile(a)
 	if err != nil {
 		t.Fatalf("%v: %v", Caller(depth+1), err)
@@ -209,10 +176,7 @@ func IsBazel() bool {
 // and returns its path. The latter happens when the caller is not running under
 // Bazel. "path" must start with "//go/src/grail.com/".  For example,
 // "//go/src/grail.com/cmd/bio-metrics/bio-metrics".
-func GoExecutable(t interface {
-	Fatalf(string, ...interface{})
-},
-	path string) string {
+func GoExecutable(t testing.TB, path string) string {
 	re := regexp.MustCompile("^//go/src/(.*/([^/]+))/([^/]+)$")
 	match := re.FindStringSubmatch(path)
 	if match == nil || match[2] != match[3] {

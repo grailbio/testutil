@@ -30,18 +30,11 @@ func TempDir(t Testing, dir, prefix string) (name string, cleanup func()) {
 		_, file, line, _ := runtime.Caller(1)
 		t.Fatalf("%s:%d: TempDir(%v, %v): %v", filepath.Base(file), line, dir, prefix, err)
 	}
-	return d, func() { os.RemoveAll(d) }
-}
-
-// SetTMPDIR will cause os.TempDir to return the supplied value. It assumes
-// that the enivornment variable TMPDIR is preferred by os.TempDir() and hence
-// manipulates that environment variable. A common usage is from within
-// tests to cause os.TempDir to return a bogus value and to trigger subsequent
-// errors.
-func SetTMPDIR(d string) string {
-	c := os.Getenv("TMPDIR")
-	os.Setenv("TMPDIR", d)
-	return c
+	return d, func() {
+		if err := os.RemoveAll(d); err != nil {
+			t.Logf("TempDir RemoveAll %v: %s", d, err)
+		}
+	}
 }
 
 // CreateDirectoryTree creates a directory tree for use in tests. Parent
@@ -80,7 +73,7 @@ func ListRecursively(t Testing, parent string) (dirs []string, files []string) {
 	if err != nil {
 		t.Fatalf("failed to open %v: %v", parent, err)
 	}
-	defer d.Close()
+	defer d.Close() // nolint: errcheck
 	dirs = append(dirs, parent)
 
 	entries, err := d.Readdir(-1)
