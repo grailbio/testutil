@@ -204,19 +204,27 @@ func ExampleEQ() {
 	expect.EQ(t, [...]int{42, 43}, [...]int{42, 43})
 	expect.EQ(t, map[int]int{1: 2, 3: 4}, map[int]int{3: 4, 1: 2})
 
-	type tt struct{ x int }
-	expect.EQ(t, tt{10}, tt{10})
-	expect.EQ(t, &tt{10}, &tt{10})
+	type tt struct {
+		x int
+		y *tt
+	}
+	expect.EQ(t, tt{10, nil}, tt{10, nil})
+	expect.EQ(t, &tt{10, nil}, &tt{10, nil})
+	expect.EQ(t, []tt{{10, nil}, {11, nil}}, []tt{{10, nil}, {11, nil}})
+	expect.EQ(t, tt{10, &tt{11, nil}}, tt{10, &tt{11, nil}})
 
-	var it0 interface{} = tt{10}
-	var it1 interface{} = tt{10}
+	xt0 := &tt{10, nil}
+	xt0.y = xt0
+	xt1 := &tt{10, nil}
+	xt1.y = xt1
+	expect.EQ(t, xt0, xt1)
+
+	var it0 interface{} = tt{10, nil}
+	var it1 interface{} = tt{10, nil}
 	expect.EQ(t, it0, it1)
 
 	ch := make(chan uint8)
 	expect.EQ(t, ch, ch)
-
-	f := func() int { return 10 }
-	expect.EQ(t, f, f)
 	// Output:
 }
 

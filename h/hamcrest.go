@@ -307,19 +307,11 @@ func Not(m *Matcher) *Matcher {
 //
 // EQ returns true only if the two values are of the same type. In addition:
 //
-// - Equality of scalar values is defined by Go's operator ==.
-//
-// - Two structs are equal if every field value is equal.
-//
 // - Two slices/arrays are equal if they are of the same length and the element
 // at every position are equal.
 //
-// - Two maps are equal if (a) they have the same number of keys, (b) every key
-// in one map has an equal key in the other map, and (c) the corresponding
-// values for every key are equal.
-//
-// - Two interfaces/pointers are equal, if the elements that they point to are
-// equal.
+// - For other data types, the two values x and y are equal if
+//   reflect.DeepEqual(x, y)
 func EQ(want interface{}) *Matcher {
 	m := &Matcher{
 		isEqual: true,
@@ -815,6 +807,7 @@ const (
 //
 // - Otherwise, this function returns cEQ if x==y (using Go's '==' operator),
 //   cNEQ else.
+
 func compare(x, y interface{}) (compareResult, error) {
 	return compareRec(reflect.ValueOf(x), reflect.ValueOf(y))
 }
@@ -832,48 +825,6 @@ func compareRec(xv, yv reflect.Value) (compareResult, error) {
 		return cEQ, fmt.Errorf("%v(type:%v) and %v(type:%v) are not comparable", xv, xType, yv, yType)
 	}
 	switch xType.Kind() {
-	case reflect.Slice, reflect.Array:
-		if xv.Len() != yv.Len() {
-			return cNEQ, nil
-		}
-		for i := 0; i < xv.Len(); i++ {
-			c, err := compareRec(xv.Index(i), yv.Index(i))
-			if err != nil {
-				return c, err
-			}
-			if c != cEQ {
-				return cNEQ, nil
-			}
-		}
-		return cEQ, nil
-	case reflect.Map:
-		if xv.Len() != yv.Len() {
-			return cNEQ, nil
-		}
-		xKeys := xv.MapKeys()
-		for _, k := range xKeys {
-			v0 := xv.MapIndex(k)
-			v1 := yv.MapIndex(k)
-			if !v1.IsValid() {
-				return cNEQ, nil
-			}
-			c, err := compareRec(v0, v1)
-			if err != nil {
-				return c, err
-			}
-			if c != cEQ {
-				return cNEQ, nil
-			}
-		}
-		return cEQ, nil
-	case reflect.Struct:
-		nField := xType.NumField()
-		for i := 0; i < nField; i++ {
-			if c, err := compareRec(xv.Field(i), yv.Field(i)); err != nil || c != cEQ {
-				return cNEQ, err
-			}
-		}
-		return cEQ, nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		xi, yi := xv.Int(), yv.Int()
 		if xi < yi {
@@ -907,26 +858,6 @@ func compareRec(xv, yv reflect.Value) (compareResult, error) {
 			return cGT, nil
 		}
 		return cEQ, nil
-	case reflect.Complex64, reflect.Complex128:
-		xi, yi := xv.Complex(), yv.Complex()
-		if xi == yi {
-			return cEQ, nil
-		}
-		return cNEQ, nil
-	case reflect.Bool:
-		xi, yi := xv.Bool(), yv.Bool()
-		if xi == yi {
-			return cEQ, nil
-		}
-		return cNEQ, nil
-	case reflect.Interface, reflect.Ptr:
-		return compareRec(xv.Elem(), yv.Elem())
-	case reflect.Chan, reflect.Func, reflect.UnsafePointer:
-		xi, yi := xv.Pointer(), yv.Pointer()
-		if xi == yi {
-			return cEQ, nil
-		}
-		return cNEQ, nil
 	case reflect.String:
 		xi, yi := xv.String(), yv.String()
 		if xi < yi {
@@ -936,7 +867,24 @@ func compareRec(xv, yv reflect.Value) (compareResult, error) {
 			return cGT, nil
 		}
 		return cEQ, nil
+	case reflect.Slice:
+		if xv.Len() != yv.Len() {
+			return cNEQ, nil
+		}
+		for i := 0; i < xv.Len(); i++ {
+			c, err := compareRec(xv.Index(i), yv.Index(i))
+			if err != nil {
+				return c, err
+			}
+			if c != cEQ {
+				return cNEQ, nil
+			}
+		}
+		return cEQ, nil
 	default:
-		panic(xType.String())
+		if reflect.DeepEqual(xv.Interface(), yv.Interface()) {
+			return cEQ, nil
+		}
+		return cNEQ, nil
 	}
 }
