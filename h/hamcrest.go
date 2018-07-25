@@ -789,6 +789,24 @@ func Panics(m *Matcher) *Matcher {
 	return pm
 }
 
+// Zero checks if the value is the zero value of its type.
+func Zero() *Matcher {
+	m := &Matcher{
+		Msg:    "is zero value for the type",
+		NotMsg: "is not the zero value for the type",
+	}
+	m.Match = func(got interface{}) Result {
+		if got == nil {
+			return NewResult(true, got, m)
+		}
+		if reflect.DeepEqual(got, reflect.Zero(reflect.TypeOf(got)).Interface()) {
+			return NewResult(true, got, m)
+		}
+		return NewResult(false, got, m)
+	}
+	return m
+}
+
 type compareResult int
 
 const (

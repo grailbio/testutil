@@ -228,6 +228,23 @@ func ExampleEQ() {
 	// Output:
 }
 
+func ExampleZero() {
+	t := &T{}
+	expect.That(t, 0, h.Zero())
+	expect.That(t, 0.0, h.Zero())
+	expect.That(t, "", h.Zero())
+	expect.That(t, 1, h.Not(h.Zero()))
+	expect.That(t, 0.1, h.Not(h.Zero()))
+	expect.That(t, "x", h.Not(h.Zero()))
+	type tt struct{ x int }
+	expect.That(t, tt{x: 0}, h.Zero())
+	expect.That(t, tt{x: 1}, h.Not(h.Zero()))
+	expect.That(t, nil, h.Zero())
+	expect.That(t, []int{}, h.Not(h.Zero()))
+	expect.That(t, []int{0}, h.Not(h.Zero()))
+	// Output:
+}
+
 func ExampleLT() {
 	t := &T{}
 	expect.That(t, 10, h.LT(11))
