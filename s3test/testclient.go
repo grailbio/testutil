@@ -72,7 +72,7 @@ type Client struct {
 	m        sync.Mutex
 	content  map[string]FileContent      // maps s3 key
 	uploads  map[string]*multipartUpload // active multipart upload requests
-	apiCount map[string]int              // maps the s3 api methods to occurence counts
+	apiCount map[string]int              // maps the s3 api methods to occurrence counts
 	t        *testing.T
 
 	seqMu sync.Mutex // For generating unique IDs.
@@ -120,6 +120,12 @@ type FileContent struct {
 	ETag         string
 }
 
+func fileMetadata(f FileContent) map[string]*string {
+	return map[string]*string{
+		awsContentSha256Key: aws.String(f.SHA256),
+	}
+}
+
 func (c *Client) newETag() string {
 	c.seqMu.Lock()
 	s := fmt.Sprintf("testetag%d", c.seq)
@@ -148,7 +154,12 @@ func NewClient(t *testing.T, bucket string) *Client {
 	//   we subcontract the building of the request out to the real S3API
 	//   implementation, get rid of its Handlers, patch up the output, and
 	//   then insert a noop Send Handler
-	svc := s3.New(session.New(), nil)
+	sess, err := session.NewSession()
+	if err != nil {
+		t.Fatalf("testclient.NewClient NewSession: %v", err)
+		return nil
+	}
+	svc := s3.New(sess, nil)
 	svc.Handlers.Clear()
 	return &Client{
 		svc:      svc,
@@ -207,7 +218,9 @@ func (c *Client) GetFileContentBytes(key string) []byte {
 	c.m.Lock()
 	defer c.m.Unlock()
 	result := make([]byte, c.content[key].Content.Size())
-	c.content[key].Content.ReadAt(result, 0)
+	if n, err := c.content[key].Content.ReadAt(result, 0); n != len(result) || err != nil {
+		c.t.Fatalf("testclient.GetFileContentBytes: %d %v", n, err)
+	}
 	return result
 }
 
@@ -318,9 +331,7 @@ func (c *Client) HeadObject(
 		ContentLength: aws.Int64(f.Content.Size()),
 		LastModified:  aws.Time(f.LastModified),
 		ETag:          aws.String(f.ETag),
-		Metadata: map[string]*string{
-			awsContentSha256Key: aws.String(f.SHA256),
-		},
+		Metadata:      fileMetadata(f),
 	}
 	return output, nil
 }
@@ -407,10 +418,8 @@ func (c *Client) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2O
 					prefixGroupMap[groupKey] = &s3.CommonPrefix{
 						Prefix: aws.String(groupKey),
 					}
-					// c.t.Logf("Adding prefix group map for key %s, for %d total",groupKey,len(prefixGroupMap))
 				}
 			} else {
-
 				object := &s3.Object{
 					Key:          aws.String(key),
 					Size:         aws.Int64(content.Content.Size()),
@@ -418,7 +427,6 @@ func (c *Client) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2O
 					ETag:         aws.String(content.ETag),
 				}
 				output.Contents = append(output.Contents, object)
-				// c.t.Logf("Adding file %s, for %d total",key,len(output.Contents))
 			}
 		}
 
@@ -698,11 +706,8 @@ func (c *Client) GetObjectRequest(
 		}
 		output.LastModified = aws.Time(b.LastModified)
 		output.ETag = aws.String(b.ETag)
+		output.Metadata = fileMetadata(b)
 	}
-	// c.t.Logf("GetObjectRequest output: %v", output)
-	req.Handlers.Send.PushBack(func(r *request.Request) {
-		// c.t.Logf("get params: %T\n", r.Params)
-	})
 	return
 }
 
