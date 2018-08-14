@@ -534,10 +534,43 @@ func Contains(w interface{}) *Matcher {
 //   assert.That(t, []int{12, 10}, h.ElementsAre(12, 10))
 //   assert.That(t, []int{12, 10}, h.ElementsAre(h.LT(20), 10))
 func ElementsAre(w ...interface{}) *Matcher {
-	msgs := make([]string, len(w))
 	wants := make([]*Matcher, len(w))
 	for i := range w {
 		wants[i] = toMatcher(w[i])
+	}
+	return elementsAreImpl("ElementsAreArray", wants)
+}
+
+// Construct a list of matchers. "w" must be an array-like object.
+func toMatcherArray(label string, w interface{}) []*Matcher {
+	wantV := reflect.ValueOf(w)
+	if err := indexable(wantV); err != nil {
+		panic(fmt.Sprintf("%s: arg must be array-like, but got %+v", label, w))
+	}
+	l := wantV.Len()
+	wants := make([]*Matcher, l)
+	for i := range wants {
+		wants[i] = toMatcher(wantV.Index(i).Interface())
+	}
+	return wants
+}
+
+// ElementsAreArray checks if a sequence matches the given array of values, in
+// order.  The argument must be array-like (slice, array, string, ...).
+//
+// Example:
+//   // Note: the below is the same as assert.EQ(t, []int{12, 10}, []int{12, 10})
+//   assert.That(t, []int{12, 10}, h.ElementsAreArray([]int{12, 10}))
+//   assert.That(t, []int{12, 10}, h.ElementsAreArray([]interface{}{h.LT(20), 10)))
+func ElementsAreArray(w interface{}) *Matcher {
+	const label = "ElementsAreArray"
+	return elementsAreImpl(label, toMatcherArray(label, w))
+}
+
+// elementsAreImpl implements ElementsAre{,Array}.
+func elementsAreImpl(label string, wants []*Matcher) *Matcher {
+	msgs := make([]string, len(wants))
+	for i := range wants {
 		msgs[i] = wants[i].Msg
 	}
 	m := &Matcher{
@@ -551,7 +584,9 @@ func ElementsAre(w ...interface{}) *Matcher {
 		}
 		n := gotV.Len()
 		if n != len(wants) {
-			return NewErrorf(got, "ElementsAre: length mismatch, got %v, want %v", describe(gotV), strings.Join(msgs, ", "))
+			return NewErrorf(got, "%s: length mismatch (%d != %d), got %v, want %v",
+				label, n, len(wants),
+				describe(gotV), strings.Join(msgs, ", "))
 		}
 		for i := 0; i < n; i++ {
 			elem := gotV.Index(i).Interface()
@@ -672,16 +707,31 @@ func (p *permuter) scan() bool {
 // UnorderedElementsAre checks if the target sequence matches some permutation
 // of the given values.
 func UnorderedElementsAre(w ...interface{}) *Matcher {
-	msgs := make([]string, len(w))
 	wants := make([]*Matcher, len(w))
-	if len(w) > 8 {
-		panic("UnorderedElemntsAre: too many args (max: 8)")
-	}
 	for i := range w {
 		wants[i] = toMatcher(w[i])
+	}
+	return unorderedElementsAreImpl("UnorderedElementsAreArray", wants)
+}
+
+// UnorderedElementsAreArray checks if the target sequence matches some
+// permutation of the given list of values. The argument must be array-like (slice,
+// array, string, ...).
+func UnorderedElementsAreArray(w interface{}) *Matcher {
+	const label = "UnorderedElementsAreArray"
+	return unorderedElementsAreImpl(label, toMatcherArray(label, w))
+}
+
+// UnorderedElementsAre checks if the target sequence matches some permutation
+// of the given values. {
+func unorderedElementsAreImpl(label string, wants []*Matcher) *Matcher {
+	if len(wants) > 8 {
+		panic(fmt.Sprintf("%s: too many args, %d (max: 8)", label, len(wants)))
+	}
+	msgs := make([]string, len(wants))
+	for i := range wants {
 		msgs[i] = wants[i].Msg
 	}
-
 	m := &Matcher{
 		Msg:    fmt.Sprintf("match some permutation of [%s]", strings.Join(msgs, ", ")),
 		NotMsg: fmt.Sprintf("do not match any permutation of [%s]", strings.Join(msgs, ", ")),
@@ -693,7 +743,9 @@ func UnorderedElementsAre(w ...interface{}) *Matcher {
 		}
 		n := gotV.Len()
 		if n != len(wants) {
-			return NewErrorf(m, "UnorderedElementsAre: length mismatch, got %v, want %v", describe(gotV), strings.Join(msgs, ", "))
+			return NewErrorf(got, "%s: length mismatch (%d != %d), got %v, want %v",
+				label, n, len(wants),
+				describe(gotV), strings.Join(msgs, ", "))
 		}
 
 		permuter := newPermuter(n)

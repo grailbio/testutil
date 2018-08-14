@@ -272,8 +272,16 @@ func ExampleLE() {
 
 func ExampleElementsAre() {
 	t := &T{}
+	expect.That(t, []int{10, 11}, h.ElementsAre([]interface{}{10, 11}...))
 	expect.That(t, []int{10, 16}, h.ElementsAre(10, h.GT(15)))
 	expect.That(t, []int{}, h.ElementsAre())
+	// Output:
+}
+
+func ExampleElementsAreArray() {
+	t := &T{}
+	expect.That(t, []int{10, 16}, h.ElementsAreArray([]int{10, 16}))
+	expect.That(t, []int{10, 16}, h.ElementsAreArray([]interface{}{10, h.GT(15)}))
 	// Output:
 }
 
@@ -314,6 +322,48 @@ func ExampleUnorderedElementsAre() {
 	expect.That(t, []int{11, 10, 12}, h.UnorderedElementsAre(10, 11, 12))
 	expect.That(t, []int{10}, h.UnorderedElementsAre(10))
 	expect.That(t, []int{}, h.UnorderedElementsAre())
+	// Output:
+}
+
+func ExampleUnorderedElementsAreArray() {
+	t := &T{}
+	expect.That(t, []int{12, 10, 11}, h.UnorderedElementsAreArray([]int{10, 11, 12}))
+	expect.That(t, []int{12, 11, 10}, h.UnorderedElementsAreArray([]int{10, 11, 12}))
+	expect.That(t, []int{11, 10, 12}, h.UnorderedElementsAreArray([]int{10, 11, 12}))
+	expect.That(t, []int{10}, h.UnorderedElementsAreArray([]int{10}))
+	expect.That(t, []int{}, h.UnorderedElementsAreArray([]int{}))
+	// Output:
+}
+
+func ExampleUnorderedElementsAre_struct() {
+	t := &T{}
+	type T struct {
+		Name string
+		Type string
+	}
+	val := []T{
+		T{Name: "n0", Type: "t0"},
+		T{Name: "n1", Type: "t1"},
+	}
+	expect.That(t, val, h.UnorderedElementsAre(
+		T{Name: "n1", Type: "t1"},
+		T{Name: "n0", Type: "t0"}))
+	// Output:
+}
+
+func ExampleUnorderedElementsAreArray_struct() {
+	t := &T{}
+	type T struct {
+		Name string
+		Type string
+	}
+	val := []T{
+		T{Name: "n0", Type: "t0"},
+		T{Name: "n1", Type: "t1"},
+	}
+	expect.That(t, val, h.UnorderedElementsAreArray([]T{
+		{Name: "n1", Type: "t1"},
+		{Name: "n0", Type: "t0"}}))
 	// Output:
 }
 
