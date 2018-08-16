@@ -277,11 +277,14 @@ func None() *Matcher {
 	return m
 }
 
-// Not negates the result of the child matcher.
+// Not negates the result of the child matcher.  The argument can be a *Matcher,
+// or any value.
 //
 // Example:
 //  assert.That(t, "abc", h.Not(h.Regexp("e+")))
-func Not(m *Matcher) *Matcher {
+//  assert.That(t, 10, h.Not(11))
+func Not(val interface{}) *Matcher {
+	m := toMatcher(val)
 	nm := &Matcher{
 		Msg:    m.NotMsg,
 		NotMsg: m.Msg,
@@ -772,7 +775,8 @@ func unorderedElementsAreImpl(label string, wants []*Matcher) *Matcher {
 }
 
 // AllOf checks if the target value matches all the submatchers.
-func AllOf(matchers ...*Matcher) *Matcher {
+func AllOf(values ...interface{}) *Matcher {
+	matchers := toMatcherArray("AllOf", values)
 	m := &Matcher{
 		Msg:    "allof",
 		NotMsg: "not allof",
@@ -792,7 +796,8 @@ func AllOf(matchers ...*Matcher) *Matcher {
 }
 
 // AnyOf checks if the target value matches at least one of the submatchers.
-func AnyOf(matchers ...*Matcher) *Matcher {
+func AnyOf(values ...interface{}) *Matcher {
+	matchers := toMatcherArray("AnyOf", values)
 	m := &Matcher{
 		Msg:    "anyof",
 		NotMsg: "not anyof",
@@ -814,7 +819,8 @@ func AnyOf(matchers ...*Matcher) *Matcher {
 // Example:
 //   assert.That(t, func() { panic("fox jumped over a dog") }, h.Panics(h.Regexp("j.*d"))
 //   assert.That(t, func() { panic("fox jumped over a dog") }, h.Panics(h.NotNil()))
-func Panics(m *Matcher) *Matcher {
+func Panics(want interface{}) *Matcher {
+	m := toMatcher(want)
 	pm := &Matcher{
 		Msg:    "panic value " + m.Msg,
 		NotMsg: "does not panic with " + m.Msg,

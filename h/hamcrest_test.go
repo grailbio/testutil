@@ -309,6 +309,7 @@ func ExampleAllOf() {
 
 func ExampleAnyOf() {
 	t := &T{}
+	expect.That(t, 10, h.AnyOf(9, 10, 11))
 	expect.That(t, 10, h.Not(h.AnyOf(h.GE(11), h.LE(9))))
 	expect.That(t, 10, h.AnyOf(h.LT(11), h.GT(10)))
 	expect.That(t, 10, h.Not(h.AnyOf()))
@@ -371,6 +372,12 @@ func ExampleWhenSorted() {
 	t := &T{}
 	expect.That(t, []int{11, 10, 12}, h.WhenSorted(h.ElementsAre(10, 11, 12)))
 	// Output:
+}
+
+func ExampleNot() {
+	t := &T{}
+	expect.That(t, 10, h.Not(11))
+	expect.That(t, "abc", h.Not(h.HasPrefix("b")))
 }
 
 func ExampleContains() {
