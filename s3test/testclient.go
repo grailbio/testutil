@@ -897,6 +897,11 @@ func (c *Client) GetBucketLocationRequest(input *s3.GetBucketLocationInput) (req
 	return
 }
 
+func (c *Client) GetBucketLocationWithContext(ctx aws.Context, input *s3.GetBucketLocationInput, opts ...request.Option) (*s3.GetBucketLocationOutput, error) {
+	req, out := c.GetBucketLocationRequest(input)
+	return out, req.Send()
+}
+
 // PutObjectAcl sets the ACL of an object already in the bucket.
 func (c *Client) PutObjectAcl(input *s3.PutObjectAclInput) (*s3.PutObjectAclOutput, error) {
 	if err := c.startRequest("PutObjectAcl", input); err != nil {
