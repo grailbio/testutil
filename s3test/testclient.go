@@ -38,7 +38,16 @@ func sha256Digest(body []byte, meta map[string]*string) (string, error) {
 	return bodySum, nil
 }
 
+type multipartUploadStatus int
+
+const (
+	multipartUploadActive multipartUploadStatus = iota
+	multipartUploadCompleted
+	multipartUploadAborted
+)
+
 type multipartUpload struct {
+	status  multipartUploadStatus
 	id      string             // uploadID
 	key     string             // s3 path
 	etag    string             // etag to be assigned to the new file
@@ -63,8 +72,11 @@ type Client struct {
 	// for operations involving this client.
 	NumMaxRetries int
 
-	// If Err!=nil, it is returned by any s3 method call.
-	Err error
+	// If Err!=nil, it is called when a request handler starts.  "api" is the
+	// request name, e.g., "GetObjectRequest", and "input" is the request object,
+	// e.g., *s3.GetObjectInput. If the Err callback returns an error, the request
+	// handler will return that error.
+	Err func(api string, input interface{}) error
 
 	s3iface.S3API
 	svc      s3iface.S3API
@@ -231,11 +243,18 @@ func (c *Client) setFileFromPartialContent(key string, uploadID string, parts []
 
 	r := c.uploads[uploadID]
 	if r == nil {
-		c.t.Errorf("UploadPartRequest: unknown upload ID %s", uploadID)
+		c.t.Errorf("setFileFromPartialContent: unknown upload ID %s", uploadID)
 		return
 	}
 	if r.key != key {
 		c.t.Errorf("Key mismatch: %v %v", r.key, key)
+		return
+	}
+	if r.status == multipartUploadCompleted {
+		return
+	}
+	if r.status == multipartUploadAborted {
+		c.t.Errorf("CompleteMultiPartUpload: upload %s aborted", uploadID)
 		return
 	}
 	if len(parts) != len(r.partial) {
@@ -274,7 +293,7 @@ func (c *Client) setFileFromPartialContent(key string, uploadID string, parts []
 		LastModified: time.Now(),
 		ETag:         r.etag,
 	}
-	delete(c.uploads, uploadID)
+	r.status = multipartUploadCompleted
 }
 
 func (c *Client) copyFile(src, dst string, meta map[string]*string) error {
@@ -295,12 +314,6 @@ func (c *Client) deleteFile(key string) {
 	delete(c.content, key)
 }
 
-func (c *Client) incApiCount(api string) {
-	c.m.Lock()
-	defer c.m.Unlock()
-	c.apiCount[api]++
-}
-
 // GetApiCount returns the number of invocations for the given API
 // GetApiCount returns call. counts only for methods that are under
 // GetApiCount returns test.
@@ -310,13 +323,22 @@ func (c *Client) GetApiCount(api string) int {
 	return c.apiCount[api]
 }
 
+func (c *Client) startRequest(api string, input interface{}) error {
+	c.m.Lock()
+	c.apiCount[api]++
+	c.m.Unlock()
+	if c.Err != nil {
+		return c.Err(api, input)
+	}
+	return nil
+}
+
 // HeadObject is used in s3-loader to determine if an object in S3 and
 // the local matching object are identical.
 func (c *Client) HeadObject(
 	input *s3.HeadObjectInput) (output *s3.HeadObjectOutput, err error) {
-	c.incApiCount("HeadObject")
-	if c.Err != nil {
-		return nil, c.Err
+	if err := c.startRequest("HeadObject", input); err != nil {
+		return nil, err
 	}
 	if got, want := aws.StringValue(input.Bucket), c.bucket; got != want {
 		c.t.Errorf("HeadObject received unexpected bucket got: %s want %s", got, want)
@@ -336,19 +358,14 @@ func (c *Client) HeadObject(
 	return output, nil
 }
 
-func (c *Client) maybeOverrideError(r *request.Request) {
-	if c.Err != nil && r.Error == nil {
-		r.Error = c.Err
-	}
-}
-
 // HeadObjectWithContext is the same as HeadObject, but allows passing a
 // context and options.
 func (c *Client) HeadObjectWithContext(
 	ctx aws.Context, input *s3.HeadObjectInput, opts ...request.Option) (output *s3.HeadObjectOutput, err error) {
-	c.incApiCount("HeadObjectRequestWithContext")
 	req, out := c.HeadObjectRequest(input)
-	defer c.maybeOverrideError(req)
+	if err := c.startRequest("HeadObjectRequestWithContext", input); err != nil {
+		req.Error = err
+	}
 	req.SetContext(ctx)
 	req.ApplyOptions(opts...)
 	return out, req.Send()
@@ -356,10 +373,11 @@ func (c *Client) HeadObjectWithContext(
 
 // HeadObjectRequest creates an RPC request for HeadObject.
 func (c *Client) HeadObjectRequest(input *s3.HeadObjectInput) (req *request.Request, out *s3.HeadObjectOutput) {
-	c.incApiCount("HeadObjectRequest")
 	var err error
 	req, out = c.svc.HeadObjectRequest(input)
-	defer c.maybeOverrideError(req)
+	if err := c.startRequest("HeadObjectRequest", input); err != nil {
+		req.Error = err
+	}
 	out1, err := c.HeadObject(input)
 	if err != nil {
 		req.Error = err
@@ -375,8 +393,10 @@ func (c *Client) HeadObjectRequest(input *s3.HeadObjectInput) (req *request.Requ
 // to download.
 func (c *Client) ListObjectsV2WithContext(
 	ctx aws.Context, input *s3.ListObjectsV2Input, opts ...request.Option) (*s3.ListObjectsV2Output, error) {
-	c.incApiCount("ListObjectsV2WithContext")
 	req, out := c.ListObjectsV2Request(input)
+	if err := c.startRequest("ListObjectsV2WithContext", input); err != nil {
+		req.Error = err
+	}
 	req.SetContext(ctx)
 	req.ApplyOptions(opts...)
 	return out, req.Send()
@@ -385,9 +405,8 @@ func (c *Client) ListObjectsV2WithContext(
 // ListObjectsV2 is used by DownloadDirTree to detemine all the files
 // to download.
 func (c *Client) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
-	c.incApiCount("ListObjectsV2")
-	if c.Err != nil {
-		return nil, c.Err
+	if err := c.startRequest("ListObjectV2", input); err != nil {
+		return nil, err
 	}
 	if got, want := aws.StringValue(input.Bucket), c.bucket; got != want {
 		c.t.Errorf("ListObjectsV2 received unexpected bucket got: %s want %s", got, want)
@@ -440,12 +459,13 @@ func (c *Client) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2O
 // ListObjectsV2Request implements the request variant of ListObjectsV2.
 func (c *Client) ListObjectsV2Request(
 	input *s3.ListObjectsV2Input) (req *request.Request, output *s3.ListObjectsV2Output) {
-	c.incApiCount("ListObjectsV2Request")
 	if got, want := aws.StringValue(input.Bucket), c.bucket; got != want {
 		c.t.Errorf("ListObjectsV2 received unexpected bucket got: %s want %s", got, want)
 	}
 	req, output = c.svc.ListObjectsV2Request(input)
-	defer c.maybeOverrideError(req)
+	if err := c.startRequest("ListObjectsV2Request", input); err != nil {
+		req.Error = err
+	}
 	outputp, err := c.ListObjectsV2(input)
 	if err != nil {
 		req.Error = err
@@ -458,14 +478,13 @@ func (c *Client) ListObjectsV2Request(
 // PutObjectRequest is used within s3manager to upload single part files.
 func (c *Client) PutObjectRequest(
 	input *s3.PutObjectInput) (req *request.Request, output *s3.PutObjectOutput) {
-	c.incApiCount("PutObjectRequest")
-	// c.t.Logf("PutObjectRequest input: %v", input)
 	if got, want := aws.StringValue(input.Bucket), c.bucket; got != want {
 		c.t.Errorf("PutObjectRequest received unexpected bucket got: %s want %s", got, want)
 	}
 	req, output = c.svc.PutObjectRequest(input)
-	defer c.maybeOverrideError(req)
-
+	if err := c.startRequest("PutObjectRequest", input); err != nil {
+		req.Error = err
+	}
 	key := aws.StringValue(input.Key)
 	body, err := ioutil.ReadAll(input.Body)
 	if err != nil {
@@ -491,7 +510,9 @@ func (c *Client) PutObjectWithContext(ctx aws.Context, input *s3.PutObjectInput,
 func (c *Client) CreateMultipartUploadWithContext(
 	ctx aws.Context, input *s3.CreateMultipartUploadInput, opts ...request.Option) (
 	*s3.CreateMultipartUploadOutput, error) {
-	c.incApiCount("CreateMultipartUploadWithContext")
+	if err := c.startRequest("CreateMultipartUploadWithContext", input); err != nil {
+		return nil, err
+	}
 	req, out := c.CreateMultipartUploadRequest(input)
 	req.SetContext(ctx)
 	req.ApplyOptions(opts...)
@@ -502,8 +523,9 @@ func (c *Client) CreateMultipartUploadWithContext(
 func (c *Client) UploadPartWithContext(
 	ctx aws.Context, input *s3.UploadPartInput, opts ...request.Option) (
 	*s3.UploadPartOutput, error) {
-	name := "UploadPartWithContext"
-	c.incApiCount(name)
+	if err := c.startRequest("UploadPartWithContext", input); err != nil {
+		return nil, err
+	}
 	req, out := c.UploadPartRequest(input)
 	req.Handlers.Unmarshal.Clear()
 	req.SetContext(ctx)
@@ -515,7 +537,9 @@ func (c *Client) UploadPartWithContext(
 func (c *Client) UploadPartCopyWithContext(
 	ctx aws.Context, input *s3.UploadPartCopyInput, opts ...request.Option) (
 	*s3.UploadPartCopyOutput, error) {
-	c.incApiCount("UploadPartCopyWithContext")
+	if err := c.startRequest("UploadPartCopyWithContext", input); err != nil {
+		return nil, err
+	}
 	req, out := c.UploadPartCopyRequest(input)
 	req.Handlers.Unmarshal.Clear()
 	req.SetContext(ctx)
@@ -527,7 +551,9 @@ func (c *Client) UploadPartCopyWithContext(
 func (c *Client) CompleteMultipartUploadWithContext(
 	ctx aws.Context, input *s3.CompleteMultipartUploadInput, opts ...request.Option) (
 	*s3.CompleteMultipartUploadOutput, error) {
-	c.incApiCount("CompleteMultipartUploadWithContext")
+	if err := c.startRequest("CompleteMultipartUploadWithContext", input); err != nil {
+		return nil, err
+	}
 	req, out := c.CompleteMultipartUploadRequest(input)
 	req.Handlers.Unmarshal.Clear()
 	req.SetContext(ctx)
@@ -538,11 +564,13 @@ func (c *Client) CompleteMultipartUploadWithContext(
 // CreateMultipartUploadRequest stubs the corresponding s3iface.API method.
 func (c *Client) CreateMultipartUploadRequest(
 	input *s3.CreateMultipartUploadInput) (req *request.Request, output *s3.CreateMultipartUploadOutput) {
-	c.incApiCount("CreateMultipartUploadRequest")
 	req, output = c.svc.CreateMultipartUploadRequest(input)
-	defer c.maybeOverrideError(req)
+	if err := c.startRequest("CreateMultipartUploadRequest", input); err != nil {
+		req.Error = err
+	}
 	uploadID := c.newUploadID()
 	r := &multipartUpload{
+		status:  multipartUploadActive,
 		id:      uploadID,
 		key:     aws.StringValue(input.Key),
 		etag:    "testetag:" + uploadID,
@@ -559,9 +587,10 @@ func (c *Client) CreateMultipartUploadRequest(
 // UploadPartRequest stubs the corresponding s3iface.API method.
 func (c *Client) UploadPartRequest(
 	input *s3.UploadPartInput) (req *request.Request, output *s3.UploadPartOutput) {
-	c.incApiCount("UploadPartRequest")
 	req, output = c.svc.UploadPartRequest(input)
-	defer c.maybeOverrideError(req)
+	if err := c.startRequest("UploadPartRequest", input); err != nil {
+		req.Error = err
+	}
 	uploadID := aws.StringValue(input.UploadId)
 	body, err := ioutil.ReadAll(input.Body)
 	if err != nil {
@@ -575,6 +604,9 @@ func (c *Client) UploadPartRequest(
 		c.t.Errorf("UploadPartRequest: unknown upload ID %s", uploadID)
 		return
 	}
+	if r.status != multipartUploadActive {
+		c.t.Errorf("UploadPartRequest: upload %s finished with status %v", uploadID, r.status)
+	}
 	r.partial[aws.Int64Value(input.PartNumber)] = body
 	output.SetETag(r.etag)
 	return req, output
@@ -583,9 +615,10 @@ func (c *Client) UploadPartRequest(
 // UploadPartCopyRequest stubs the corresponding s3iface.API method.
 func (c *Client) UploadPartCopyRequest(
 	input *s3.UploadPartCopyInput) (req *request.Request, output *s3.UploadPartCopyOutput) {
-	c.incApiCount("UploadPartCopyRequest")
 	req, output = c.svc.UploadPartCopyRequest(input)
-	defer c.maybeOverrideError(req)
+	if err := c.startRequest("UploadPartCopyRequest", input); err != nil {
+		req.Error = err
+	}
 	uploadID := aws.StringValue(input.UploadId)
 	source, err := url.Decode(aws.StringValue(input.CopySource))
 	if err != nil {
@@ -631,12 +664,20 @@ func (c *Client) UploadPartCopyRequest(
 // AbortMultipartUploadRequest stubs the corresponding s3iface.API method.
 func (c *Client) AbortMultipartUploadRequest(
 	input *s3.AbortMultipartUploadInput) (req *request.Request, output *s3.AbortMultipartUploadOutput) {
-	c.incApiCount("AbortMultipartUploadRequest")
 	req, output = c.svc.AbortMultipartUploadRequest(input)
-	defer c.maybeOverrideError(req)
+	if err := c.startRequest("AbortMultipartUploadRequest", input); err != nil {
+		req.Error = err
+	}
 	uploadID := aws.StringValue(input.UploadId)
 	c.m.Lock()
-	delete(c.uploads, uploadID)
+	r := c.uploads[uploadID]
+	if r == nil {
+		c.t.Errorf("AbortMultipartUploadRequest: unknown upload ID %s", uploadID)
+	} else if r.status != multipartUploadCompleted {
+		r.status = multipartUploadAborted
+	} else {
+		c.t.Errorf("AbortMultipartUploadRequest: upload %s in wrong state %v", uploadID, r.status)
+	}
 	c.m.Unlock()
 	return req, output
 }
@@ -654,9 +695,10 @@ func (c *Client) AbortMultipartUploadWithContext(
 // CompleteMultipartUploadRequest stubs the corresponding s3iface.API method.
 func (c *Client) CompleteMultipartUploadRequest(
 	input *s3.CompleteMultipartUploadInput) (req *request.Request, output *s3.CompleteMultipartUploadOutput) {
-	c.incApiCount("CompleteMultipartUploadRequest")
 	req, output = c.svc.CompleteMultipartUploadRequest(input)
-	defer c.maybeOverrideError(req)
+	if err := c.startRequest("CompleteMultipartUploadRequest", input); err != nil {
+		req.Error = err
+	}
 	uploadID := aws.StringValue(input.UploadId)
 	key := aws.StringValue(input.Key)
 	c.setFileFromPartialContent(key, uploadID, input.MultipartUpload.Parts)
@@ -667,13 +709,13 @@ func (c *Client) CompleteMultipartUploadRequest(
 // GetObjectRequest is used by GetObjectWithContext by s3manager (aws-sdk >= 1.8.0) to downoad files.
 func (c *Client) GetObjectRequest(
 	input *s3.GetObjectInput) (req *request.Request, output *s3.GetObjectOutput) {
-	c.incApiCount("GetObjectRequest")
-	// c.t.Logf("GetObjectRequest input: %v", input)
 	if got, want := aws.StringValue(input.Bucket), c.bucket; got != want {
 		c.t.Errorf("GetObjectRequest received unexpected bucket got: %s want %s", got, want)
 	}
 	req, output = c.svc.GetObjectRequest(input)
-	defer c.maybeOverrideError(req)
+	if err := c.startRequest("GetObjectRequest", input); err != nil {
+		req.Error = err
+	}
 	key := aws.StringValue(input.Key)
 	b, ok := c.GetFile(key)
 	if !ok {
@@ -714,11 +756,13 @@ func (c *Client) GetObjectRequest(
 // CopyObjectRequest implements the Request model of server side object copying.
 func (c *Client) CopyObjectRequest(
 	input *s3.CopyObjectInput) (req *request.Request, output *s3.CopyObjectOutput) {
-	c.incApiCount("CopyObjectRequest")
 	if got, want := aws.StringValue(input.Bucket), c.bucket; got != want {
 		c.t.Errorf("CopyObject received unexpected bucket got: %s want %s", got, want)
 	}
 	req, output = c.svc.CopyObjectRequest(input)
+	if err := c.startRequest("CopyObjectRequest", input); err != nil {
+		req.Error = err
+	}
 	req.Handlers.Unmarshal.Clear()
 
 	// c.t.Logf("CopyObjectRequest input: %v", *input)
@@ -738,9 +782,8 @@ func (c *Client) CopyObjectRequest(
 
 // CopyObject implements S3-side object copying.
 func (c *Client) CopyObject(input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
-	c.incApiCount("CopyObject")
-	if c.Err != nil {
-		return nil, c.Err
+	if err := c.startRequest("CopyObject", input); err != nil {
+		return nil, err
 	}
 	if got, want := aws.StringValue(input.Bucket), c.bucket; got != want {
 		c.t.Errorf("CopyObject received unexpected bucket got: %s want %s", got, want)
@@ -762,9 +805,8 @@ func (c *Client) CopyObject(input *s3.CopyObjectInput) (*s3.CopyObjectOutput, er
 
 // DeleteObject removes an object from the bucket.
 func (c *Client) DeleteObject(input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
-	c.incApiCount("DeleteObject")
-	if c.Err != nil {
-		return nil, c.Err
+	if err := c.startRequest("DeleteObject", input); err != nil {
+		return nil, err
 	}
 	if got, want := aws.StringValue(input.Bucket), c.bucket; got != want {
 		c.t.Errorf("DeleteObject received unexpected bucket got: %s want %s", got, want)
@@ -777,8 +819,10 @@ func (c *Client) DeleteObject(input *s3.DeleteObjectInput) (*s3.DeleteObjectOutp
 // DeleteObjectWithContext is the same as DeleteObject, but allows passing a
 // context and options.
 func (c *Client) DeleteObjectWithContext(ctx aws.Context, input *s3.DeleteObjectInput, opts ...request.Option) (*s3.DeleteObjectOutput, error) {
-	c.incApiCount("DeleteObjectWithContext")
 	req, out := c.DeleteObjectRequest(input)
+	if err := c.startRequest("DeleteObjectRequestWithContext", input); err != nil {
+		req.Error = err
+	}
 	req.SetContext(ctx)
 	req.ApplyOptions(opts...)
 	return out, req.Send()
@@ -786,10 +830,11 @@ func (c *Client) DeleteObjectWithContext(ctx aws.Context, input *s3.DeleteObject
 
 // DeleteObjectRequest creates an RPC request for DeleteObject.
 func (c *Client) DeleteObjectRequest(input *s3.DeleteObjectInput) (req *request.Request, out *s3.DeleteObjectOutput) {
-	c.incApiCount("DeleteObjectRequest")
 	var err error
 	req, out = c.svc.DeleteObjectRequest(input)
-	defer c.maybeOverrideError(req)
+	if err := c.startRequest("DeleteObjectRequest", input); err != nil {
+		req.Error = err
+	}
 	out1, err := c.DeleteObject(input)
 	if err != nil {
 		req.Error = err
@@ -803,9 +848,8 @@ func (c *Client) DeleteObjectRequest(input *s3.DeleteObjectInput) (req *request.
 
 // GetObject retrieves an object from the bucket.
 func (c *Client) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
-	c.incApiCount("GetObject")
-	if c.Err != nil {
-		return nil, c.Err
+	if err := c.startRequest("GetObject", input); err != nil {
+		return nil, err
 	}
 	if got, want := aws.StringValue(input.Bucket), c.bucket; got != want {
 		c.t.Errorf("GetObject received unexpected bucket got: %s want %s", got, want)
@@ -833,10 +877,11 @@ func (c *Client) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error
 // we leverage GetObjectRequest (from above) internally to do the work.
 func (c *Client) GetObjectWithContext(
 	ctx aws.Context, input *s3.GetObjectInput, opts ...request.Option) (*s3.GetObjectOutput, error) {
-	c.incApiCount("GetObjectWithContext")
-
 	// This implementation taken from svc.GetObjectWithContext()
 	req, out := c.GetObjectRequest(input)
+	if err := c.startRequest("GetObjectWithContext", input); err != nil {
+		req.Error = err
+	}
 	req.SetContext(ctx)
 	req.ApplyOptions(opts...)
 	return out, req.Send()
@@ -845,12 +890,13 @@ func (c *Client) GetObjectWithContext(
 // GetBucketLocationRequest implements the bucket location (Client.Region)
 // request.
 func (c *Client) GetBucketLocationRequest(input *s3.GetBucketLocationInput) (req *request.Request, output *s3.GetBucketLocationOutput) {
-	c.incApiCount("GetBucketLocationRequest")
 	if got, want := aws.StringValue(input.Bucket), c.bucket; got != want {
 		c.t.Errorf("GetBucketLocationRequest received unexpected bucket got: %s want %s", got, want)
 	}
 	req, output = c.svc.GetBucketLocationRequest(input)
-	defer c.maybeOverrideError(req)
+	if err := c.startRequest("GetBucketLocationRequest", input); err != nil {
+		req.Error = err
+	}
 	output.SetLocationConstraint(c.Region)
 	req.Handlers.Send.Clear()
 	req.Handlers.Clear()
@@ -859,9 +905,8 @@ func (c *Client) GetBucketLocationRequest(input *s3.GetBucketLocationInput) (req
 
 // PutObjectAcl sets the ACL of an object already in the bucket.
 func (c *Client) PutObjectAcl(input *s3.PutObjectAclInput) (*s3.PutObjectAclOutput, error) {
-	c.incApiCount("PutObjectAcl")
-	if c.Err != nil {
-		return nil, c.Err
+	if err := c.startRequest("PutObjectAcl", input); err != nil {
+		return nil, err
 	}
 	output := s3.PutObjectAclOutput{}
 	return &output, nil
