@@ -29,6 +29,11 @@ type FakeContentAt struct {
 	FailureRate float64
 }
 
+// Checksum implements ContentAt.
+func (fca *FakeContentAt) Checksum() string {
+	return "fakechecksum"
+}
+
 // Read implements the io.Reader.
 func (fca *FakeContentAt) Read(p []byte) (int, error) {
 	if fca.Current == fca.SizeInBytes {
@@ -40,7 +45,7 @@ func (fca *FakeContentAt) Read(p []byte) (int, error) {
 
 	count := min(int64(len(p)), fca.SizeInBytes-fca.Current)
 	for i := int64(0); i < count; i++ {
-		p[i] = byte(int('a') + int((fca.Current+int64(i))%26))
+		p[i] = byte('a' + int((fca.Current+i)%26))
 	}
 	fca.Current += count
 
@@ -59,10 +64,8 @@ func (fca *FakeContentAt) ReadAt(p []byte, off int64) (int, error) {
 	count := min(fca.SizeInBytes-off, int64(len(p)))
 
 	for i := int64(0); i < count; i++ {
-		p[i] = byte(int('a') + int((off+int64(i))%26))
+		p[i] = byte('a' + int((off+i)%26))
 	}
-	p = p[:count]
-
 	return int(count), nil
 }
 
@@ -89,7 +92,7 @@ func (fca *FakeContentAt) Write(p []byte) (int, error) {
 	}
 
 	for i := 0; i < len(p); i++ {
-		if p[i] != byte(int('a')+int((fca.Current+int64(i))%26)) {
+		if p[i] != byte('a'+int((fca.Current+int64(i))%26)) {
 			fca.T.Fatal("character mismatch in write")
 		}
 	}
@@ -102,7 +105,7 @@ func (fca *FakeContentAt) Write(p []byte) (int, error) {
 // WriteAt implements io.WriterAt.
 func (fca *FakeContentAt) WriteAt(p []byte, off int64) (int, error) {
 	for i := 0; i < len(p); i++ {
-		if p[i] != byte(int('a')+int((off+int64(i))%26)) {
+		if p[i] != byte('a'+int((off+int64(i))%26)) {
 			fca.T.Fatal("character mismatch in write")
 		}
 	}

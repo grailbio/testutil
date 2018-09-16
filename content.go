@@ -2,6 +2,8 @@ package testutil
 
 import (
 	"bytes"
+	"crypto/md5"
+	"fmt"
 	"io"
 )
 
@@ -11,7 +13,12 @@ type ContentAt interface {
 	io.ReaderAt
 	io.WriterAt
 
+	// Size returns the total byte count of the contents.
 	Size() int64
+
+	// Checksum returns the checksum of the contents.  It is typically an MD5 hex
+	// string, following the S3 convention.
+	Checksum() string
 }
 
 // ByteContent stores data for content storage tests.
@@ -36,6 +43,11 @@ func (bc *ByteContent) WriteAt(p []byte, off int64) (int, error) {
 	copy(bc.Data[off:off+int64(len(p))], p)
 
 	return len(p), nil
+}
+
+// Checksum implements ContentAt.
+func (bc *ByteContent) Checksum() string {
+	return fmt.Sprintf("%x", md5.Sum(bc.Data))
 }
 
 // Set sets the contents

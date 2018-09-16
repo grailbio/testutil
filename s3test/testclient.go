@@ -50,7 +50,6 @@ type multipartUpload struct {
 	status  multipartUploadStatus
 	id      string             // uploadID
 	key     string             // s3 path
-	etag    string             // etag to be assigned to the new file
 	meta    map[string]*string // metadata sent in CreateMultiPartUpload request
 	partial map[int64][]byte
 }
@@ -138,14 +137,6 @@ func fileMetadata(f FileContent) map[string]*string {
 	}
 }
 
-func (c *Client) newETag() string {
-	c.seqMu.Lock()
-	s := fmt.Sprintf("testetag%d", c.seq)
-	c.seq++
-	c.seqMu.Unlock()
-	return s
-}
-
 func (c *Client) newUploadID() string {
 	c.seqMu.Lock()
 	s := fmt.Sprintf("testuploadid%d", c.seq)
@@ -221,7 +212,7 @@ func (c *Client) SetFileContentAt(key string, content testutil.ContentAt, sha256
 		Content:      content,
 		SHA256:       sha256,
 		LastModified: time.Now(),
-		ETag:         c.newETag(),
+		ETag:         content.Checksum(),
 	}
 }
 
@@ -287,11 +278,12 @@ func (c *Client) setFileFromPartialContent(key string, uploadID string, parts []
 	if err != nil {
 		panic(err)
 	}
+	content := &testutil.ByteContent{buf}
 	c.content[key] = FileContent{
-		Content:      &testutil.ByteContent{buf},
+		Content:      content,
 		SHA256:       sha,
 		LastModified: time.Now(),
-		ETag:         r.etag,
+		ETag:         content.Checksum(),
 	}
 	r.status = multipartUploadCompleted
 }
@@ -573,7 +565,6 @@ func (c *Client) CreateMultipartUploadRequest(
 		status:  multipartUploadActive,
 		id:      uploadID,
 		key:     aws.StringValue(input.Key),
-		etag:    "testetag:" + uploadID,
 		meta:    input.Metadata,
 		partial: map[int64][]byte{},
 	}
@@ -608,7 +599,9 @@ func (c *Client) UploadPartRequest(
 		c.t.Errorf("UploadPartRequest: upload %s finished with status %v", uploadID, r.status)
 	}
 	r.partial[aws.Int64Value(input.PartNumber)] = body
-	output.SetETag(r.etag)
+
+	content := testutil.ByteContent{body}
+	output.SetETag(content.Checksum())
 	return req, output
 }
 
@@ -655,8 +648,9 @@ func (c *Client) UploadPartCopyRequest(
 		return
 	}
 	r.partial[aws.Int64Value(input.PartNumber)] = data
+	content := testutil.ByteContent{data}
 	output.SetCopyPartResult(&s3.CopyPartResult{
-		ETag: aws.String("etag"),
+		ETag: aws.String(content.Checksum()),
 	})
 	return req, output
 }
