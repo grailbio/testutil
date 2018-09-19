@@ -27,13 +27,23 @@ func TestEQStruct(t *testing.T) {
 	type tt struct {
 		x int
 		y string
+		z *tt
 	}
-	expect.NEQ(t, tt{10, "x"}, tt{11, "x"})
+	expect.NEQ(t, tt{10, "x", nil}, tt{11, "x", nil})
 	type tt2 struct {
 		x int
 		y string
+		z *tt
 	}
-	expect.Regexp(t, h.EQ(tt2{10, "x"}).Match(tt{10, "x"}), "Error.*are not comparable")
+	expect.Regexp(t, h.EQ(tt2{10, "x", nil}).Match(tt{10, "x", nil}), "Error.*are not comparable")
+
+	// Cyclic struct
+	v0 := tt{x: 10}
+	v1 := tt{x: 10}
+	v2 := tt{x: 11, z: &v0}
+	v0.z = &v2
+	v1.z = &v2
+	expect.EQ(t, v0, v1)
 }
 
 func TestExpect(t *testing.T) {
@@ -223,8 +233,26 @@ func ExampleEQ() {
 	var it1 interface{} = tt{10, nil}
 	expect.EQ(t, it0, it1)
 
-	ch := make(chan uint8)
-	expect.EQ(t, ch, ch)
+	ch0 := make(chan uint8)
+	ch1 := make(chan uint8)
+	expect.EQ(t, ch0, ch0)
+	expect.NEQ(t, ch0, ch1)
+	// Output:
+}
+
+func ExampleRegisterComparator() {
+	t := &T{}
+	type tt struct{ val int }
+	h.RegisterComparator(func(x, y tt) (int, error) {
+		if x.val > 1000 {
+			return 0, fmt.Errorf("test failure")
+		}
+		return x.val - y.val, nil
+	})
+	expect.LT(t, tt{val: 10}, tt{val: 11})
+	expect.EQ(t, tt{val: 10}, tt{val: 10})
+	expect.GT(t, tt{val: 11}, tt{val: 10})
+	expect.Regexp(t, h.EQ(tt{1001}).Match(tt{1001}), "test failure")
 	// Output:
 }
 

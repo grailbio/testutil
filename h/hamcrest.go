@@ -15,6 +15,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
+	"unsafe"
 )
 
 // Status represents the match result.
@@ -865,6 +867,51 @@ func Zero() *Matcher {
 	return m
 }
 
+var (
+	comparatorMu = sync.Mutex{}
+	comparators  = map[reflect.Type]reflect.Value{}
+)
+
+// RegisterComparator registers a comparator function for a user-defined type.
+// The callback should have signature
+//
+//     func(a, b T) (int, error)
+//
+// where T is an arbitrary type.  The callback will be invoked by h.EQ, h.GT and
+// similar matchers. It is also invoked if type T appears inside a struct,
+// pointer, or an interface.
+//
+// The callback should return a negative value if a<b, zero if a==b, a positive
+// value if a>b. It should return a non-nil error if a and b are not comparable,
+// or on any other error. The callback may define its own meanings of ">", "==",
+// and "<", but they must define a total ordering over T.
+func RegisterComparator(callback interface{}) {
+	typ := reflect.TypeOf(callback)
+	if typ.Kind() != reflect.Func {
+		panic(fmt.Sprintf("h.RegisterComparator: %v is not a function", callback))
+	}
+	errorInterface := reflect.TypeOf((*error)(nil)).Elem()
+	ok := true
+	if typ.NumIn() != 2 || typ.In(0) != typ.In(1) ||
+		typ.NumOut() != 2 || typ.Out(0).Kind() != reflect.Int || !typ.Out(1).Implements(errorInterface) {
+		ok = false
+	}
+	if !ok {
+		panic(fmt.Sprintf("h.RegisterComparator: %v must be a binary function that takes inputs of the same type, and returns (int, error)", callback))
+	}
+	argType := typ.In(0)
+	comparatorMu.Lock()
+	comparators[argType] = reflect.ValueOf(callback)
+	comparatorMu.Unlock()
+}
+
+func findComparator(typ reflect.Type) (reflect.Value, bool) {
+	comparatorMu.Lock()
+	v, ok := comparators[typ]
+	comparatorMu.Unlock()
+	return v, ok
+}
+
 type compareResult int
 
 const (
@@ -884,11 +931,17 @@ const (
 // - Otherwise, this function returns cEQ if x==y (using Go's '==' operator),
 //   cNEQ else.
 
-func compare(x, y interface{}) (compareResult, error) {
-	return compareRec(reflect.ValueOf(x), reflect.ValueOf(y))
+type visit struct {
+	a1, a2 unsafe.Pointer
+	typ    reflect.Type
 }
 
-func compareRec(xv, yv reflect.Value) (compareResult, error) {
+func compare(x, y interface{}) (compareResult, error) {
+	visited := map[visit]bool{}
+	return compareRec(reflect.ValueOf(x), reflect.ValueOf(y), visited)
+}
+
+func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, error) {
 	if !xv.IsValid() {
 		if yv.IsValid() {
 			return cNEQ, nil
@@ -900,6 +953,44 @@ func compareRec(xv, yv reflect.Value) (compareResult, error) {
 	if xType != yType {
 		return cEQ, fmt.Errorf("%v(type:%v) and %v(type:%v) are not comparable", xv, xType, yv, yType)
 	}
+
+	comparator, ok := findComparator(xType)
+	if ok {
+		retval := comparator.Call([]reflect.Value{xv, yv})
+		if !retval[1].IsNil() { // error?
+			return 0, retval[1].Interface().(error)
+		}
+		v := retval[0].Int()
+		switch {
+		case v < 0:
+			return cLT, nil
+		case v == 0:
+			return cEQ, nil
+		default:
+			return cGT, nil
+		}
+	}
+
+	hard := func(k reflect.Kind) bool {
+		return k == reflect.Map || k == reflect.Slice || k == reflect.Ptr || k == reflect.Interface
+	}
+	if xv.CanAddr() && yv.CanAddr() && hard(xv.Kind()) {
+		xaddr := unsafe.Pointer(xv.UnsafeAddr())
+		yaddr := unsafe.Pointer(yv.UnsafeAddr())
+		if uintptr(xaddr) > uintptr(yaddr) {
+			// Canonicalize order to reduce number of entries in visited.
+			// Assumes non-moving garbage collector.
+			xaddr, yaddr = yaddr, xaddr
+		}
+		// Short circuit if references are already seen.
+		typ := xv.Type()
+		v := visit{xaddr, yaddr, typ}
+		if visited[v] {
+			return cEQ, nil
+		}
+		visited[v] = true
+	}
+
 	switch xType.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		xi, yi := xv.Int(), yv.Int()
@@ -943,12 +1034,24 @@ func compareRec(xv, yv reflect.Value) (compareResult, error) {
 			return cGT, nil
 		}
 		return cEQ, nil
-	case reflect.Slice:
+	case reflect.Complex64, reflect.Complex128:
+		xi, yi := xv.Complex(), yv.Complex()
+		if xi == yi {
+			return cEQ, nil
+		}
+		return cNEQ, nil
+	case reflect.Bool:
+		xi, yi := xv.Bool(), yv.Bool()
+		if xi == yi {
+			return cEQ, nil
+		}
+		return cNEQ, nil
+	case reflect.Slice, reflect.Array:
 		if xv.Len() != yv.Len() {
 			return cNEQ, nil
 		}
 		for i := 0; i < xv.Len(); i++ {
-			c, err := compareRec(xv.Index(i), yv.Index(i))
+			c, err := compareRec(xv.Index(i), yv.Index(i), visited)
 			if err != nil {
 				return c, err
 			}
@@ -957,10 +1060,60 @@ func compareRec(xv, yv reflect.Value) (compareResult, error) {
 			}
 		}
 		return cEQ, nil
-	default:
-		if reflect.DeepEqual(xv.Interface(), yv.Interface()) {
+	case reflect.Interface:
+		if xv.IsNil() || yv.IsNil() {
+			if xv.IsNil() == yv.IsNil() {
+				return cEQ, nil
+			}
+			return cNEQ, nil
+		}
+		return compareRec(xv.Elem(), yv.Elem(), visited)
+	case reflect.Ptr:
+		if xv.Pointer() == yv.Pointer() {
+			return cEQ, nil
+		}
+		return compareRec(xv.Elem(), yv.Elem(), visited)
+	case reflect.Chan:
+		if xv.Pointer() == yv.Pointer() {
 			return cEQ, nil
 		}
 		return cNEQ, nil
+	case reflect.Struct:
+		for i, n := 0, xv.NumField(); i < n; i++ {
+			r, err := compareRec(xv.Field(i), yv.Field(i), visited)
+			if r != cEQ || err != nil {
+				return cNEQ, err
+			}
+		}
+		return cEQ, nil
+	case reflect.Map:
+		if xv.IsNil() != yv.IsNil() {
+			return cNEQ, nil
+		}
+		if xv.Len() != yv.Len() {
+			return cNEQ, nil
+		}
+		if xv.Pointer() == yv.Pointer() {
+			return cEQ, nil
+		}
+		for _, k := range xv.MapKeys() {
+			val1 := xv.MapIndex(k)
+			val2 := yv.MapIndex(k)
+			if !val1.IsValid() || !val2.IsValid() {
+				return cNEQ, nil
+			}
+			r, err := compareRec(xv.MapIndex(k), yv.MapIndex(k), visited)
+			if r != cEQ || err != nil {
+				return cNEQ, err
+			}
+		}
+		return cEQ, nil
+	case reflect.Func:
+		if xv.IsNil() && yv.IsNil() {
+			return cEQ, nil
+		}
+		return cNEQ, nil
+	default:
+		panic(fmt.Sprintf("Unsupported data type for EQ: %v, %v", xv, xType))
 	}
 }
