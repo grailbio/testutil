@@ -1,7 +1,6 @@
 package s3test
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -714,36 +713,37 @@ func (c *Client) GetObjectRequest(
 	b, ok := c.GetFile(key)
 	if !ok {
 		c.t.Logf("GetObjectRequest no file content for: %s", key)
-		output.Body = ioutil.NopCloser(bytes.NewReader(make([]byte, 0)))
-		output.ContentLength = aws.Int64(0)
-		output.LastModified = aws.Time(time.Time{})
-		output.ETag = aws.String("")
-	} else {
-		start := int64(0)
-		last := b.Content.Size() - 1
-		if input.Range != nil {
-			var err error
-			start, last, err = parseByteRange(aws.StringValue(input.Range), b.Content.Size())
-			if err != nil {
-				c.t.Errorf("GetObjectRequest: %v", err)
-			}
-		}
-		if (last + 1) >= b.Content.Size() {
-			output.Body = ioutil.NopCloser(io.NewSectionReader(b.Content, start, b.Content.Size()-start))
-			if start > 0 {
-				last = b.Content.Size() - 1
-				output.ContentRange = aws.String(fmt.Sprintf("bytes %d-%d/%d", start, last, b.Content.Size()))
-			}
-			output.ContentLength = aws.Int64(b.Content.Size() - start)
-		} else {
-			output.Body = ioutil.NopCloser(io.NewSectionReader(b.Content, start, last-start+1))
-			output.ContentRange = aws.String(fmt.Sprintf("bytes %d-%d/%d", start, last, b.Content.Size()))
-			output.ContentLength = aws.Int64(last - start + 1)
-		}
-		output.LastModified = aws.Time(b.LastModified)
-		output.ETag = aws.String(b.ETag)
-		output.Metadata = fileMetadata(b)
+		req.Error = awserr.New("NoSuchKey", fmt.Sprintf("key %s not found", key), nil)
+		return
 	}
+	if input.IfMatch != nil && b.Content.Checksum() != *input.IfMatch {
+		req.Error = awserr.New("PreconditionFailed", "mismatched etag", nil)
+		return
+	}
+	start := int64(0)
+	last := b.Content.Size() - 1
+	if input.Range != nil {
+		var err error
+		start, last, err = parseByteRange(aws.StringValue(input.Range), b.Content.Size())
+		if err != nil {
+			c.t.Errorf("GetObjectRequest: %v", err)
+		}
+	}
+	if (last + 1) >= b.Content.Size() {
+		output.Body = ioutil.NopCloser(io.NewSectionReader(b.Content, start, b.Content.Size()-start))
+		if start > 0 {
+			last = b.Content.Size() - 1
+			output.ContentRange = aws.String(fmt.Sprintf("bytes %d-%d/%d", start, last, b.Content.Size()))
+		}
+		output.ContentLength = aws.Int64(b.Content.Size() - start)
+	} else {
+		output.Body = ioutil.NopCloser(io.NewSectionReader(b.Content, start, last-start+1))
+		output.ContentRange = aws.String(fmt.Sprintf("bytes %d-%d/%d", start, last, b.Content.Size()))
+		output.ContentLength = aws.Int64(last - start + 1)
+	}
+	output.LastModified = aws.Time(b.LastModified)
+	output.ETag = aws.String(b.ETag)
+	output.Metadata = fileMetadata(b)
 	return
 }
 
@@ -854,16 +854,15 @@ func (c *Client) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error
 	b, ok := c.GetFile(key)
 	if !ok {
 		c.t.Logf("GetObject no file content for: %s", key)
-		output.Body = ioutil.NopCloser(bytes.NewReader(make([]byte, 0)))
-		output.ContentLength = aws.Int64(0)
-		output.LastModified = aws.Time(time.Time{})
-		output.ETag = aws.String("")
-	} else {
-		output.Body = ioutil.NopCloser(io.NewSectionReader(b.Content, 0, b.Content.Size()))
-		output.ContentLength = aws.Int64(b.Content.Size())
-		output.LastModified = aws.Time(b.LastModified)
-		output.ETag = aws.String(b.ETag)
+		return nil, awserr.New("NoSuchKey", fmt.Sprintf("key %s not found", key), nil)
 	}
+	if input.IfMatch != nil && b.Content.Checksum() != *input.IfMatch {
+		return nil, awserr.New("PreconditionFailed", "mismatched etag", nil)
+	}
+	output.Body = ioutil.NopCloser(io.NewSectionReader(b.Content, 0, b.Content.Size()))
+	output.ContentLength = aws.Int64(b.Content.Size())
+	output.LastModified = aws.Time(b.LastModified)
+	output.ETag = aws.String(b.ETag)
 	return &output, nil
 }
 
