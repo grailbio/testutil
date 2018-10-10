@@ -127,9 +127,9 @@ func newBenchmarkRunner(ctx context.Context, conf RunConfig) (*benchmarkRunner, 
 	}
 	b.tempDir = tempDir
 
-	err = traverse.Each(len(b.conf.Targets)).Do(func(i int) error {
+	err = traverse.Each(len(b.conf.Targets), func(i int) error {
 		target := &b.conf.Targets[i]
-		return traverse.Each(len(target.Commandline)).Do(func(j int) error {
+		return traverse.Each(len(target.Commandline), func(j int) error {
 			var err error
 			target.Commandline[j], err = b.translateArg(ctx, target.Commandline[j])
 			return err
