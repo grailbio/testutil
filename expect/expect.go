@@ -15,6 +15,7 @@ type TB interface {
 // msgs[0] must be a format string, and they are printed using fmt.Printf on
 // error.
 func That(t TB, val interface{}, m *h.Matcher, msgs ...interface{}) {
+
 	r := m.Match(val)
 	if r.Status() == h.Match {
 		return

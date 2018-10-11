@@ -1,5 +1,6 @@
 // Package assert provides helper functions for unittests, in a style of
-// hamcrest, gtest and gmock.
+// hamcrest, gtest and gmock. It is a thin wrapper around the "h" package (
+// https://godoc.org/github.com/grailbio/testutil/h).
 //
 // Features:
 //
@@ -72,8 +73,11 @@ import (
 	"github.com/grailbio/testutil/h"
 )
 
-// EQ checks if the two values are equal.  If msgs... is not empty, msgs[0] must
-// be a format string, and they are printed using fmt.Printf on error.
+// EQ checks if the two values are equal. It is a shorthand for That(got,
+// h.EQ(want), ...).
+//
+// If msgs... is not empty, msgs[0] must be a format string, and they are
+// printed using fmt.Printf on error.
 func EQ(t TB, got, want interface{}, msgs ...interface{}) {
 	That(t, got, h.EQ(want), msgs...)
 }

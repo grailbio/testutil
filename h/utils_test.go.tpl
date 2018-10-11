@@ -3,6 +3,7 @@ package PACKAGE_test
 
 import (
 	"fmt"
+        "math"
 
 	"github.com/grailbio/testutil/PACKAGE"
 )
@@ -10,11 +11,11 @@ import (
 type T struct{}
 
 func (t *T) Error(args ...interface{}) {
-	fmt.Println(args)
+	fmt.Println(args...)
 }
 
 func (t *T) Fatal(args ...interface{}) {
-	fmt.Println(args)
+	fmt.Println(args...)
 	panic("fatal")
 }
 
@@ -47,6 +48,9 @@ func ExampleNEQ() {
 	PACKAGE.NEQ(t, 42.0, 43.0)
 	PACKAGE.NEQ(t, []int{42, 43}, []int{43, 42})
 	PACKAGE.NEQ(t, [...]int{42, 43}, [...]int{43, 42})
+	nan := math.NaN()
+	PACKAGE.NEQ(t, nan, nan)
+	PACKAGE.NEQ(t, nan, 0.0)
 	// Output:
 }
 

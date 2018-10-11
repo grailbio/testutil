@@ -1024,7 +1024,10 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 		if xi > yi {
 			return cGT, nil
 		}
-		return cEQ, nil
+		if xi == yi {
+			return cEQ, nil
+		}
+		return cNEQ, nil // xi or yi is NaN
 	case reflect.String:
 		xi, yi := xv.String(), yv.String()
 		if xi < yi {

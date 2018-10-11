@@ -1,8 +1,8 @@
-// Generated from utils_test.go.tpl. DO NOT EDIT.
 package assert_test
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/grailbio/testutil/assert"
 )
@@ -10,11 +10,11 @@ import (
 type T struct{}
 
 func (t *T) Error(args ...interface{}) {
-	fmt.Println(args)
+	fmt.Println(args...)
 }
 
 func (t *T) Fatal(args ...interface{}) {
-	fmt.Println(args)
+	fmt.Println(args...)
 	panic("fatal")
 }
 
@@ -47,6 +47,9 @@ func ExampleNEQ() {
 	assert.NEQ(t, 42.0, 43.0)
 	assert.NEQ(t, []int{42, 43}, []int{43, 42})
 	assert.NEQ(t, [...]int{42, 43}, [...]int{43, 42})
+	nan := math.NaN()
+	assert.NEQ(t, nan, nan)
+	assert.NEQ(t, nan, 0.0)
 	// Output:
 }
 

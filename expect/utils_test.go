@@ -1,8 +1,8 @@
-// Generated from utils_test.go.tpl. DO NOT EDIT.
 package expect_test
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/grailbio/testutil/expect"
 )
@@ -10,11 +10,11 @@ import (
 type T struct{}
 
 func (t *T) Error(args ...interface{}) {
-	fmt.Println(args)
+	fmt.Println(args...)
 }
 
 func (t *T) Fatal(args ...interface{}) {
-	fmt.Println(args)
+	fmt.Println(args...)
 	panic("fatal")
 }
 
@@ -47,6 +47,9 @@ func ExampleNEQ() {
 	expect.NEQ(t, 42.0, 43.0)
 	expect.NEQ(t, []int{42, 43}, []int{43, 42})
 	expect.NEQ(t, [...]int{42, 43}, [...]int{43, 42})
+	nan := math.NaN()
+	expect.NEQ(t, nan, nan)
+	expect.NEQ(t, nan, 0.0)
 	// Output:
 }
 

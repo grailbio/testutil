@@ -175,11 +175,11 @@ func TestNestedMatcher(t *testing.T) {
 type T struct{}
 
 func (t *T) Error(args ...interface{}) {
-	fmt.Println(args)
+	fmt.Println(args...)
 }
 
 func (t *T) Fatal(args ...interface{}) {
-	fmt.Println(args)
+	fmt.Println(args...)
 	panic("fatal")
 }
 
