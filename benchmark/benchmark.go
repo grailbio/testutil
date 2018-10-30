@@ -81,10 +81,11 @@ func cacheFile(ctx context.Context, srcPath string, dstPath string) (err error) 
 	if err != nil {
 		return err
 	}
-	defer file.CloseAndReport(ctx, out, &err)
 	if _, err := io.Copy(out.Writer(ctx), in.Reader(ctx)); err != nil {
+		file.CloseAndReport(ctx, out, &err)
 		return err
 	}
+	file.CloseAndReport(ctx, out, &err)
 	return os.Chtimes(dstPath, srcInfo.ModTime(), srcInfo.ModTime())
 }
 
