@@ -62,7 +62,7 @@ func (r Result) String() string {
 	}
 	buf := bytes.NewBuffer(nil)
 	buf.WriteString(fmt.Sprintf("Failure:\n%s\n", r.backtrace))
-	buf.WriteString(fmt.Sprintf("Actual:   %v", r.value))
+	buf.WriteString(fmt.Sprintf("Actual:   %s", describe(r.value)))
 	for i := len(r.valueAnnotations) - 1; i >= 0; i-- {
 		if i < len(r.valueAnnotations)-1 {
 			buf.WriteString(", ")
@@ -98,7 +98,7 @@ func describe(v interface{}) string {
 	if v == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", v)
+	return fmt.Sprintf("%+v", v)
 }
 
 func describeVerbose(v interface{}) string {
@@ -106,7 +106,7 @@ func describeVerbose(v interface{}) string {
 		return "nil"
 	}
 	vType := reflect.TypeOf(v)
-	return fmt.Sprintf("%v(type: %v)", v, vType)
+	return fmt.Sprintf("%s(type: %v)", describe(v), vType)
 }
 
 // Function backtrace generates the current stack backtrace w/o internal frames.
@@ -320,8 +320,8 @@ func Not(val interface{}) *Matcher {
 func EQ(want interface{}) *Matcher {
 	m := &Matcher{
 		isEqual: true,
-		Msg:     fmt.Sprintf("%v", want),
-		NotMsg:  fmt.Sprintf("is != %v", want),
+		Msg:     fmt.Sprintf("%s", describe(want)),
+		NotMsg:  fmt.Sprintf("is != %s", describe(want)),
 	}
 	m.Match = func(got interface{}) Result {
 		c, err := compare(got, want)
@@ -351,7 +351,7 @@ func totalOrderPredicate(
 			return NewErrorf(got, msg+": "+err.Error())
 		}
 		if c == cNEQ {
-			return NewErrorf(got, msg+": %v and %v are not comparable", describeVerbose(got), describeVerbose(want))
+			return NewErrorf(got, msg+": %s and %s are not comparable", describeVerbose(got), describeVerbose(want))
 		}
 		if cond(c) {
 			return NewResult(true, got, m)
@@ -365,8 +365,8 @@ func totalOrderPredicate(
 // or a string type.
 func LT(want interface{}) *Matcher {
 	return totalOrderPredicate(
-		fmt.Sprintf("is < %v", describe(want)),
-		fmt.Sprintf("is not < %v", describe(want)),
+		fmt.Sprintf("is < %s", describe(want)),
+		fmt.Sprintf("is not < %s", describe(want)),
 		want, func(c compareResult) bool { return c == cLT })
 }
 
@@ -385,8 +385,8 @@ func LE(want interface{}) *Matcher {
 // or a string type.
 func GT(want interface{}) *Matcher {
 	return totalOrderPredicate(
-		fmt.Sprintf("> %v", describe(want)),
-		fmt.Sprintf("not > %v", describe(want)),
+		fmt.Sprintf("> %s", describe(want)),
+		fmt.Sprintf("not > %s", describe(want)),
 		want, func(c compareResult) bool { return c == cGT })
 }
 
@@ -394,8 +394,8 @@ func GT(want interface{}) *Matcher {
 // float*) or a string type.
 func GE(want interface{}) *Matcher {
 	return totalOrderPredicate(
-		fmt.Sprintf(">= %v", want),
-		fmt.Sprintf("not >= %v", want),
+		fmt.Sprintf(">= %s", describe(want)),
+		fmt.Sprintf("not >= %s", want),
 		want, func(c compareResult) bool {
 			return c == cGT || c == cEQ
 		})
@@ -550,7 +550,7 @@ func ElementsAre(w ...interface{}) *Matcher {
 func toMatcherArray(label string, w interface{}) []*Matcher {
 	wantV := reflect.ValueOf(w)
 	if err := indexable(wantV); err != nil {
-		panic(fmt.Sprintf("%s: arg must be array-like, but got %+v", label, w))
+		panic(fmt.Sprintf("%s: arg must be array-like, but got %s", label, describe(w)))
 	}
 	l := wantV.Len()
 	wants := make([]*Matcher, l)
@@ -589,7 +589,7 @@ func elementsAreImpl(label string, wants []*Matcher) *Matcher {
 		}
 		n := gotV.Len()
 		if n != len(wants) {
-			return NewErrorf(got, "%s: length mismatch (%d != %d), got %v, want %v",
+			return NewErrorf(got, "%s: length mismatch (%d != %d), got %s, want %s",
 				label, n, len(wants),
 				describe(gotV), strings.Join(msgs, ", "))
 		}
@@ -748,7 +748,7 @@ func unorderedElementsAreImpl(label string, wants []*Matcher) *Matcher {
 		}
 		n := gotV.Len()
 		if n != len(wants) {
-			return NewErrorf(got, "%s: length mismatch (%d != %d), got %v, want %v",
+			return NewErrorf(got, "%s: length mismatch (%d != %d), got %s, want %s",
 				label, n, len(wants),
 				describe(gotV), strings.Join(msgs, ", "))
 		}
@@ -872,6 +872,24 @@ var (
 	comparators  = map[reflect.Type]reflect.Value{}
 )
 
+// Given a function of form func(a,b T) (int, error) this function returns T.
+func comparatorArgType(callback interface{}) reflect.Type {
+	typ := reflect.TypeOf(callback)
+	if typ.Kind() != reflect.Func {
+		panic(fmt.Sprintf("h.RegisterComparator: %+v is not a function", callback))
+	}
+	errorInterface := reflect.TypeOf((*error)(nil)).Elem()
+	ok := true
+	if typ.NumIn() != 2 || typ.In(0) != typ.In(1) ||
+		typ.NumOut() != 2 || typ.Out(0).Kind() != reflect.Int || !typ.Out(1).Implements(errorInterface) {
+		ok = false
+	}
+	if !ok {
+		panic(fmt.Sprintf("h.RegisterComparator: %+v must be a binary function that takes inputs of the same type, and returns (int, error)", callback))
+	}
+	return typ.In(0)
+}
+
 // RegisterComparator registers a comparator function for a user-defined type.
 // The callback should have signature
 //
@@ -886,22 +904,21 @@ var (
 // or on any other error. The callback may define its own meanings of ">", "==",
 // and "<", but they must define a total ordering over T.
 func RegisterComparator(callback interface{}) {
-	typ := reflect.TypeOf(callback)
-	if typ.Kind() != reflect.Func {
-		panic(fmt.Sprintf("h.RegisterComparator: %v is not a function", callback))
-	}
-	errorInterface := reflect.TypeOf((*error)(nil)).Elem()
-	ok := true
-	if typ.NumIn() != 2 || typ.In(0) != typ.In(1) ||
-		typ.NumOut() != 2 || typ.Out(0).Kind() != reflect.Int || !typ.Out(1).Implements(errorInterface) {
-		ok = false
-	}
-	if !ok {
-		panic(fmt.Sprintf("h.RegisterComparator: %v must be a binary function that takes inputs of the same type, and returns (int, error)", callback))
-	}
-	argType := typ.In(0)
+	argType := comparatorArgType(callback)
 	comparatorMu.Lock()
 	comparators[argType] = reflect.ValueOf(callback)
+	comparatorMu.Unlock()
+}
+
+// UnregisterComparator unregisters the callback registered in
+// RegisteredComparator.  It panics if the callback was not registered.
+func UnregisterComparator(callback interface{}) {
+	argType := comparatorArgType(callback)
+	comparatorMu.Lock()
+	if _, ok := comparators[argType]; !ok {
+		panic(fmt.Sprintf("h.UnregisterComparator: function %+v not regiseterd", callback))
+	}
+	delete(comparators, argType)
 	comparatorMu.Unlock()
 }
 
@@ -951,7 +968,7 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 	xType := xv.Type()
 	yType := yv.Type()
 	if xType != yType {
-		return cEQ, fmt.Errorf("%v(type:%v) and %v(type:%v) are not comparable", xv, xType, yv, yType)
+		return cEQ, fmt.Errorf("%+v(type:%v) and %+v(type:%v) are not comparable", xv, xType, yv, yType)
 	}
 
 	comparator, ok := findComparator(xType)
@@ -1117,6 +1134,6 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 		}
 		return cNEQ, nil
 	default:
-		panic(fmt.Sprintf("Unsupported data type for EQ: %v, %v", xv, xType))
+		panic(fmt.Sprintf("Unsupported data type for EQ: %+v, %v", xv, xType))
 	}
 }
