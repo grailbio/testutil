@@ -9,7 +9,6 @@ package encryptiontest_test
 import (
 	"bytes"
 	"fmt"
-	"math"
 	"os"
 	"strings"
 	"testing"
@@ -19,31 +18,6 @@ import (
 	"github.com/grailbio/testutil/encryptiontest"
 	"v.io/x/lib/gosh"
 )
-
-func sum(numbers []float64) (total float64) {
-	for _, x := range numbers {
-		total += x
-	}
-	return total
-}
-
-func median(numbers []float64) float64 {
-	middle := len(numbers) / 2
-	result := numbers[middle]
-	if len(numbers)%2 == 0 {
-		result = (result + numbers[middle-1]) / 2
-	}
-	return result
-}
-
-func stdDev(numbers []float64, mean float64) float64 {
-	total := 0.0
-	for _, number := range numbers {
-		total += math.Pow(number-mean, 2)
-	}
-	variance := total / float64(len(numbers)-1)
-	return math.Sqrt(variance)
-}
 
 func dieharder(t *testing.T, sh *gosh.Shell, name string, data []byte) (string, bool) {
 	// Tests 15 and 101 represent the dieharder runs test and the STS runs test.

@@ -5,9 +5,6 @@
 package encryptiontest_test
 
 import (
-	"bytes"
-	"io"
-	"io/ioutil"
 	"strings"
 	"testing"
 
@@ -99,22 +96,6 @@ func TestRunAt(t *testing.T) {
 	if got, want := success, false; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
-}
-
-func saveDataFile(t *testing.T, prefix string, data []byte) {
-	tmpfile, err := ioutil.TempFile("", prefix)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tmpfile.Close()
-	n, err := io.Copy(tmpfile, bytes.NewBuffer(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != int64(len(data)) {
-		t.Fatalf("failed to write %v bytes, wrote %v instead", len(data), n)
-	}
-	t.Logf("%v data at %v", prefix, tmpfile.Name())
 }
 
 func TestIsRandom(t *testing.T) {

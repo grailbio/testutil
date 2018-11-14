@@ -50,11 +50,6 @@ func (bc *ByteContent) Checksum() string {
 	return fmt.Sprintf("%x", md5.Sum(bc.Data))
 }
 
-// Set sets the contents
-func (bc *ByteContent) Set(data []byte) {
-	bc.Data = data
-}
-
 // Size returns the size of the contents
 func (bc *ByteContent) Size() int64 {
 	return int64(len(bc.Data))

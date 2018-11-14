@@ -5,26 +5,10 @@
 package encryptiontest
 
 import (
-	"crypto/rand"
 	"fmt"
-	"io"
 	"math"
 	"sort"
 )
-
-// Random returns a slice of the requested length containing crytographically
-// secure random data.
-func Random(n int) ([]byte, error) {
-	buf := make([]byte, n)
-	n, err := io.ReadFull(rand.Reader, buf)
-	if err != nil {
-		return nil, err
-	}
-	if n != len(buf) {
-		return nil, fmt.Errorf("short read of random data: %d < %d", n, len(buf))
-	}
-	return buf, nil
-}
 
 // Median returns the median value of the supplied byte slice.
 func Median(data []byte) byte {
