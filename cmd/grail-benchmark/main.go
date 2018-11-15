@@ -70,15 +70,14 @@ type benchmarkRunner struct {
 }
 
 // readRunConfig reads a json-encoded RunConfig from the given file.
-func readRunConfig(ctx context.Context, path, defaultCacheDir, defaultOutputDir, defaultRootDir string) (RunConfig, error) {
-	var conf RunConfig
+func readRunConfig(ctx context.Context, path, defaultCacheDir, defaultOutputDir, defaultRootDir string) (conf RunConfig, err error) {
 	in, err := file.Open(ctx, path)
 	if err != nil {
 		return conf, err
 	}
+	defer file.CloseAndReport(ctx, in, &err)
 	dec := json.NewDecoder(in.Reader(ctx))
 	if err := dec.Decode(&conf); err != nil {
-		in.Close(ctx) // nolint:errcheck
 		return conf, err
 	}
 	if conf.CacheDir == "" {
@@ -90,7 +89,7 @@ func readRunConfig(ctx context.Context, path, defaultCacheDir, defaultOutputDir,
 	if conf.RootDir == "" {
 		conf.RootDir = defaultRootDir
 	}
-	return conf, in.Close(ctx)
+	return conf, err
 }
 
 // workspaceRoot returns the repository root dir.

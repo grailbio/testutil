@@ -57,18 +57,14 @@ func (r *rateLimiter) exit(path string) {
 
 var limiter = newRateLimiter()
 
-func cacheFile(ctx context.Context, srcPath string, dstPath string) error {
+func cacheFile(ctx context.Context, srcPath string, dstPath string) (err error) {
 	limiter.enter(srcPath)
 	defer limiter.exit(srcPath)
 	in, err := file.Open(ctx, srcPath)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if in != nil {
-			in.Close(ctx) // nolint:errcheck
-		}
-	}()
+	defer file.CloseAndReport(ctx, in, &err)
 	srcInfo, err := in.Stat(ctx)
 	if err != nil {
 		return err
@@ -76,7 +72,7 @@ func cacheFile(ctx context.Context, srcPath string, dstPath string) error {
 	dstInfo, err := file.Stat(ctx, dstPath)
 	if err == nil {
 		diff := dstInfo.ModTime().Sub(srcInfo.ModTime())
-		if diff >= -5*time.Second && diff <= 5*time.Second {
+		if (diff >= -5*time.Second) && (diff <= 5*time.Second) {
 			return nil
 		}
 	}
@@ -85,18 +81,8 @@ func cacheFile(ctx context.Context, srcPath string, dstPath string) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if out != nil {
-			out.Close(ctx) // nolint:errcheck
-		}
-	}()
+	defer file.CloseAndReport(ctx, out, &err)
 	if _, err := io.Copy(out.Writer(ctx), in.Reader(ctx)); err != nil {
-		return err
-	}
-	if err, out = out.Close(ctx), nil; err != nil {
-		return err
-	}
-	if err, in = in.Close(ctx), nil; err != nil {
 		return err
 	}
 	return os.Chtimes(dstPath, srcInfo.ModTime(), srcInfo.ModTime())
