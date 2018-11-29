@@ -16,6 +16,9 @@ import (
 	"runtime/debug"
 	"strings"
 	"testing"
+
+	"github.com/grailbio/testutil/assert"
+	"github.com/grailbio/testutil/expect"
 )
 
 // MockTB is a mock implementation of gosh.TB. FailNow and Fatalf will
@@ -117,54 +120,42 @@ func GetTmpDir() string {
 
 // WriteTmp writes the supplied contents to a temporary file and returns the
 // name of that file.
-func writeTmp(t testing.TB, depth int, contents string) string {
+func writeTmp(t testing.TB, contents string) string {
 	f, err := ioutil.TempFile("", "WriteTmp-")
-	if err != nil {
-		t.Fatalf("%v: %v", Caller(depth+1), err)
-	}
-	if _, err := f.Write([]byte(contents)); err != nil {
-		t.Fatalf("%v: %v", Caller(depth+1), err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatalf("%v: %v", Caller(depth+1), err)
-	}
+	assert.NoError(t, err)
+	_, err = f.Write([]byte(contents))
+	assert.NoError(t, err)
 	return f.Name()
 }
 
 // CompareFile compares the supplied contents against the contents of the
 // specified file and if they differ calls t.Errorf and displays a diff -u of
-// them. The file is assumed to be in ./testadata. If specified the strip
-// function can be used to cleanup the contents to be compared to remove
-// things such as dates or other spurious information that's not relevant
-// to the comparison.
-func CompareFile(t testing.TB, depth int, contents string, golden string, strip func(string) string) {
-	fn := filepath.Join("testdata", golden)
-	data, err := ioutil.ReadFile(fn)
-	if err != nil {
-		t.Fatalf("%v: %v", Caller(depth+1), err)
-	}
+// them. If specified the strip function can be used to cleanup the contents to
+// be compared to remove things such as dates or other spurious information
+// that's not relevant to the comparison.
+func CompareFile(t testing.TB, contents string, golden string, strip func(string) string) {
+	data, err := ioutil.ReadFile(golden)
+	assert.NoError(t, err)
 	got, want := contents, string(data)
 	if strip != nil {
 		got, want = strip(got), strip(want)
 	}
 	if got != want {
-		gf := writeTmp(t, depth+1, got)
+		gf := writeTmp(t, got)
 		defer os.Remove(gf) // nolint: errcheck
-		cmd := exec.Command("diff", "-u", gf, fn)
+		cmd := exec.Command("diff", "-u", gf, golden)
 		diff, _ := cmd.CombinedOutput()
-		t.Logf("%v: got %v", Caller(depth+1), got)
-		t.Logf("%v: diff %v %v", Caller(depth+1), gf, fn)
-		t.Errorf("%v: %v: got != want: diff %v", Caller(depth+1), golden, string(diff))
+		t.Logf("got %v", got)
+		t.Logf("diff %v %v", gf, golden)
+		expect.True(t, false, "Golden: %v, diff: %v", golden, string(diff))
 	}
 }
 
 // CompareFiles compares 2 files in the same manner as CompareFile.
-func CompareFiles(t testing.TB, depth int, a, golden string, strip func(string) string) {
+func CompareFiles(t testing.TB, a, golden string, strip func(string) string) {
 	ac, err := ioutil.ReadFile(a)
-	if err != nil {
-		t.Fatalf("%v: %v", Caller(depth+1), err)
-	}
-	CompareFile(t, depth+1, string(ac), golden, strip)
+	assert.NoError(t, err)
+	CompareFile(t, string(ac), golden, strip)
 }
 
 // IsBazel checks if the current process is started by "bazel test".
@@ -196,12 +187,8 @@ func GoExecutableEnv(t testing.TB, path string, env []string) string {
 		}
 		pattern := GetFilePath(fmt.Sprintf("//go/src/%s/*/%s", match[1], match[2]))
 		paths, err := filepath.Glob(pattern)
-		if err != nil {
-			t.Fatalf("glob %v: %v", pattern, err)
-		}
-		if len(paths) != 1 {
-			t.Fatalf("Pattern %s must match exactly one executable, but found %v", pattern, paths)
-		}
+		assert.NoError(t, err, "glob %v", pattern)
+		assert.EQ(t, len(paths), 1, "Pattern %s must match exactly one executable, but found %v", pattern, paths)
 		return paths[0]
 	}
 	pkg := match[1]
