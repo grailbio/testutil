@@ -177,6 +177,12 @@ func IsBazel() bool {
 // Bazel. "path" must start with "//go/src/grail.com/".  For example,
 // "//go/src/grail.com/cmd/bio-metrics/bio-metrics".
 func GoExecutable(t testing.TB, path string) string {
+	return GoExecutableEnv(t, path, nil)
+}
+
+// GoExecutableEnv is like GoExecutable but allows environment variables
+// to be specified.
+func GoExecutableEnv(t testing.TB, path string, env []string) string {
 	re := regexp.MustCompile("^//go/src/(.*/([^/]+))/([^/]+)$")
 	match := re.FindStringSubmatch(path)
 	if match == nil || match[2] != match[3] {
@@ -207,8 +213,11 @@ func GoExecutable(t testing.TB, path string) string {
 	os.MkdirAll(tempDir, 0700) // nolint: errcheck
 	xpath := filepath.Join(tempDir, filepath.Base(pkg))
 	cmd := exec.Command("go", "build", "-o", xpath, pkg)
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("go build %s: %v", pkg, err)
+	if env != nil {
+		cmd.Env = env
+	}
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go build %s: %v\n%s\n", pkg, err, string(output))
 	}
 	return xpath
 }
