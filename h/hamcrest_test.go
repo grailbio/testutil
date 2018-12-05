@@ -3,6 +3,7 @@ package h_test
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 	"unsafe"
 
@@ -18,7 +19,7 @@ func resultIs(status h.Status, reStr string) *h.Matcher {
 	}
 	m.Match = func(got interface{}) h.Result {
 		r := got.(h.Result)
-		return h.NewResult(r.Status() == status && re.FindString(r.String()) != "", got, m)
+		return h.NewResult(r.Status() == status && re.FindString(r.String()) != "", got, m.Msg)
 	}
 	return m
 }
@@ -35,7 +36,7 @@ func TestEQStruct(t *testing.T) {
 		y string
 		z *tt
 	}
-	expect.Regexp(t, h.EQ(tt2{10, "x", nil}).Match(tt{10, "x", nil}), "Error.*are not comparable")
+	expect.Regexp(t, h.EQ(tt2{10, "x", nil}).Match(tt{10, "x", nil}), "(?s)Error.*are not comparable")
 
 	// Cyclic struct
 	v0 := tt{x: 10}
@@ -47,7 +48,7 @@ func TestEQStruct(t *testing.T) {
 }
 
 func TestExpect(t *testing.T) {
-	expect.Regexp(t, h.EQ(42).Match(43).String(), "(?s)Actual: *43.*Expected: 42")
+	expect.Regexp(t, h.EQ(42).Match(43).String(), `(?s)Actual: *\(int\)43.*\s+Expected: \(int\)42`)
 	expect.Regexp(t, h.EQ(42).Match("aoeu"), "Error.*are not comparable")
 
 	expect.EQ(t, h.Contains(10).Match([]int{42, 10}).Status(), h.Match)
@@ -64,7 +65,7 @@ func TestExpect(t *testing.T) {
 	expect.EQ(t, h.LE(10).Match(10).Status(), h.Match)
 
 	expect.EQ(t, h.Match, h.LT(11).Match(10).Status(), h.Match)
-	expect.Regexp(t, h.LT(10).Match(10).String(), "Expected: is < 10")
+	expect.Regexp(t, h.LT(10).Match(10).String(), `Expected: is < \(int\)10`)
 	expect.EQ(t, h.NoError().Match(nil).Status(), h.Match)
 
 	expect.EQ(t, h.Contains(h.HasSubstr("a")).Match([]string{"ab", "cd"}).Status(), h.Match)
@@ -84,10 +85,10 @@ func TestEach(t *testing.T) {
 }
 
 func TestNot(t *testing.T) {
-	expect.Regexp(t, h.Not(h.EQ(42)).Match(42), `(?s)Actual: *42.*Expected: is != 42`)
+	expect.Regexp(t, h.Not(h.EQ(42)).Match(42), `(?s)Actual: *\(int\)42.*Expected: is != \(int\)42`)
 	expect.EQ(t, h.Not(h.EQ(42)).Match(43).Status(), h.Match)
 	expect.Regexp(t, h.Not(h.EQ(42)).Match("str"),
-		`(?s)Actual: *str.*Error:.*are not comparable`)
+		`(?s)Actual: *\(string\)str.*Error:.*are not comparable`)
 }
 
 func TestDomainErrors(t *testing.T) {
@@ -105,9 +106,9 @@ func TestDomainErrors(t *testing.T) {
 
 func TestElementsAre(t *testing.T) {
 	expect.Regexp(t, h.ElementsAre(10, 11).Match([]int{9, 11}),
-		`(?s)Actual:.*\[9 11\] whose element #0 doesn't match.*Expected: elements are \[10, 11\]`)
+		`(?s)Actual: *\(\[\]int\)\[9 11\] whose element #0 doesn't match.*Expected: elements are \[\(int\)10 \(int\)11\]`)
 	expect.Regexp(t, h.ElementsAre(10, 11).Match([]int{10, 12}),
-		`(?s)Actual:.*\[10 12\] whose element #1 doesn't match.*Expected: elements are \[10, 11\]`)
+		`(?s)Actual:.*\(\[\]int\)\[10 12\] whose element #1 doesn't match.*Expected: elements are \[\(int\)10 \(int\)11\]`)
 	expect.Regexp(t, h.ElementsAre(10, 11).Match(map[int]int{10: 110, 12: 112}),
 		`Error:.*must be a slice, array, or string`)
 }
@@ -123,11 +124,11 @@ func TestWhenSorted(t *testing.T) {
 	expect.That(t, h.WhenSorted(h.ElementsAre(10, 11)).Match([]int{11, 10, 9}),
 		resultIs(h.DomainError, "length mismatch"))
 	expect.Regexp(t, h.WhenSorted(h.ElementsAre(10, 11)).Match([]int{11, 9}),
-		`(?s)Actual: *\[9 11\] whose element #0.*when sorted, elements are \[10, 11\].*`)
+		`(?s)Actual:.*\[\(int\)9 \(int\)11\] whose element #0.*when sorted, elements are \[\(int\)10 \(int\)11\].*`)
 	expect.EQ(t, h.WhenSorted(h.ElementsAre(10, 11)).Match([]int{11, 10}).Status(), h.Match)
 
 	expect.Regexp(t, h.WhenSorted(h.ElementsAre(10, 11)).Match([...]int{11, 9}),
-		`(?s)Actual: *\[9 11\] whose element #0.*when sorted, elements are \[10, 11\].*`)
+		`(?s)Actual:.*\[\(int\)9 \(int\)11\] whose element #0.*when sorted, elements are \[\(int\)10 \(int\)11\].*`)
 	expect.Regexp(t, h.WhenSorted(h.ElementsAre(10, 11)).Match(map[int]int{11: 110, 9: 99}),
 		`Error:.*must be a slice, array, or string`)
 
@@ -141,7 +142,7 @@ func TestContains(t *testing.T) {
 	expect.That(t, h.Contains(h.LE(9)).Match([]int{10, 11}),
 		resultIs(h.Mismatch, "contains element that is <= 9"))
 	expect.That(t, h.Contains(10).Match([]int{42}),
-		resultIs(h.Mismatch, "contains element that is 10"))
+		resultIs(h.Mismatch, `contains element that is \(int\)10`))
 	expect.Regexp(t, h.Contains(10).Match(map[int]int{10: 110, 12: 112}),
 		`Error:.*must be a slice, array, or string`)
 }
@@ -154,7 +155,7 @@ func TestMapContains(t *testing.T) {
 	}
 	expect.EQ(t, h.MapContains(10, h.Any()).Match(m).Status(), h.Match)
 	expect.EQ(t, h.MapContains(10, "s10").Match(m).Status(), h.Match)
-	expect.Regexp(t, h.MapContains(10, "s12").Match(m), "contains entry whose key is 10 and value is s12")
+	expect.Regexp(t, h.MapContains(10, "s12").Match(m), `contains entry whose key is \(int\)10 and value is \(string\)s12`)
 	expect.Regexp(t, h.MapContains(10, "s12").Match([]int{1, 2}), "Error:.*must be a map")
 	expect.Regexp(t, h.MapContains("s12", 10).Match(m), "Error:.*are not comparable")
 	expect.EQ(t, h.MapContains(h.Any(), "s12").Match(m).Status(), h.Match)
@@ -162,14 +163,48 @@ func TestMapContains(t *testing.T) {
 
 func TestNestedMatcher(t *testing.T) {
 	data := [][]int{[]int{10, 11, 12, 13}}
-	expect.Regexp(t, h.Contains(h.LE(9)).Match(data[0]), `(?s)Actual: *\[10 11 12 13\].*Expected:.*contains element that is <= 9`)
+	expect.Regexp(t, h.Contains(h.LE(9)).Match(data[0]), `(?s)Actual: *\(\[\]int\)\[10 11 12 13\].*Expected:.*contains element that is <= 9`)
 
 	expect.Regexp(t, h.Contains(h.Contains(h.LE(9))).Match(data),
-		`(?s)Actual: *\[\[10 11 12 13\]\].*Expected:.*contains element that contains element that is <= 9`)
+		`(?s)Actual: *\(\[\]\[\]int\)\[\[10 11 12 13\]\].*Expected:.*contains element that contains element that is <= 9`)
 
-	expect.Regexp(t, h.Each(h.LE(12)).Match(data[0]), `(?s)Actual: *\[10 11 12 13\] whose element #3 doesn't match.*Expected:.*every element in sequence is <= 12`)
-	expect.Regexp(t, h.Each(h.Each(h.LE(12))).Match(data), `(?s)Actual: *\[\[10 11 12 13\]\] whose element #0 doesn't match, whose element #3 doesn't match.*Expected:.*every element in sequence is <= 12`)
+	expect.Regexp(t, h.Each(h.LE(12)).Match(data[0]), `(?s)Actual: *\(\[\]int\)\[10 11 12 13\] whose element #3 doesn't match.*Expected:.*every element in sequence is <= 12`)
+	expect.Regexp(t, h.Each(h.Each(h.LE(12))).Match(data), `(?s)Actual: *\(\[\]\[\]int\)\[\[10 11 12 13\]\] whose element #0 doesn't match, whose element #3 doesn't match.*Expected:.*every element in sequence is <= 12`)
 
+}
+
+func TestLargeValuesShowsDiffs(t *testing.T) {
+	type s struct {
+		x, y int
+	}
+	var got, want []s
+	for i := 0; i < 40; i++ {
+		if i == 20 {
+			got = append(got, s{i*2 + 1000, i*2 + 1001})
+		}
+		got = append(got, s{i * 2, i*2 + 1})
+		want = append(want, s{i * 2, i*2 + 1})
+	}
+	expect.HasSubstr(t, h.EQ(want).Match(got),
+		`(h_test.s) {
+-   x: (int) 1040,
+-   y: (int) 1041
+-  },
+-  (h_test.s) {`)
+}
+
+func TestLongStringsShowsDiffs(t *testing.T) {
+	var got, want strings.Builder
+	for i := 0; i < 40; i++ {
+		got.WriteString(fmt.Sprintf("line%d\n", i))
+		if i != 20 {
+			want.WriteString(fmt.Sprintf("line%d\n", i))
+		}
+	}
+	expect.HasSubstr(t, h.EQ(want.String()).Match(got.String()),
+		`  line19
+- line20
+  line21`)
 }
 
 type T struct{}

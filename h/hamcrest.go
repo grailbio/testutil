@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 // Status represents the match result.
@@ -50,7 +52,8 @@ type Result struct {
 
 	msg              string
 	value            interface{}
-	valueAnnotations []string
+	valueAnnotations []string // extra attributes of the value
+	extra            string   // printed at the end of the error message
 }
 
 // Status returns the status code of the match result.
@@ -77,6 +80,10 @@ func (r Result) String() string {
 	} else {
 		buf.WriteString(fmt.Sprintf("Error:    %s\n", r.msg))
 	}
+	if r.extra != "" {
+		buf.WriteByte('\n')
+		buf.WriteString(r.extra)
+	}
 	return buf.String()
 }
 
@@ -98,7 +105,7 @@ func describe(v interface{}) string {
 	if v == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%+v", v)
+	return spew.Sprintf("%#v", v)
 }
 
 func describeVerbose(v interface{}) string {
@@ -127,10 +134,10 @@ func backtrace() string {
 
 // NewResult creates a new Result object. If matched (or !matched), the status
 // will be Match (Mismatch), respectively. got is the value under test.
-func NewResult(matched bool, got interface{}, m *Matcher) Result {
+func NewResult(matched bool, got interface{}, msg string) Result {
 	r := Result{
 		status: Match,
-		msg:    m.Msg,
+		msg:    msg,
 		value:  got,
 	}
 	if !matched {
@@ -159,13 +166,6 @@ func NewErrorf(got interface{}, f string, args ...interface{}) Result {
 	}
 }
 
-// func (m Matcher) Message(str string) Matcher {
-// 	return Matcher{
-// 		Desc:  str + ": " + m.Desc,
-// 		Match: m.Match,
-// 	}
-// }
-
 // HasSubstr checks if the value contains the given substring.  If the target
 // value is not a string, it is converted to a string with fmt.Sprintf("%v").
 func HasSubstr(want string) *Matcher {
@@ -175,7 +175,7 @@ func HasSubstr(want string) *Matcher {
 	}
 	m.Match = func(got interface{}) Result {
 		s := fmt.Sprintf("%v", got)
-		return NewResult(strings.Contains(s, want), got, m)
+		return NewResult(strings.Contains(s, want), got, m.Msg)
 	}
 	return m
 }
@@ -189,7 +189,7 @@ func HasPrefix(want string) *Matcher {
 	}
 	m.Match = func(got interface{}) Result {
 		s := fmt.Sprintf("%v", got)
-		return NewResult(strings.HasPrefix(s, want), got, m)
+		return NewResult(strings.HasPrefix(s, want), got, m.Msg)
 	}
 	return m
 }
@@ -215,7 +215,7 @@ func Regexp(want interface{}) *Matcher {
 		if !ok {
 			b = []byte(fmt.Sprintf("%v", got))
 		}
-		return NewResult(re.Find(b) != nil, got, m)
+		return NewResult(re.Find(b) != nil, got, m.Msg)
 	}
 	return m
 }
@@ -234,20 +234,20 @@ func Nil() *Matcher {
 	}
 	m.Match = func(got interface{}) Result {
 		if got == nil {
-			return NewResult(true, got, m)
+			return NewResult(true, got, m.Msg)
 		}
 		v := reflect.ValueOf(got)
 		switch v.Kind() {
 		case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
 			if v.IsNil() {
-				return NewResult(true, got, m)
+				return NewResult(true, got, m.Msg)
 			}
 		case reflect.UnsafePointer:
 			if v.Pointer() == 0 {
-				return NewResult(true, got, m)
+				return NewResult(true, got, m.Msg)
 			}
 		}
-		return NewResult(false, got, m)
+		return NewResult(false, got, m.Msg)
 	}
 	return m
 }
@@ -262,7 +262,7 @@ func Any() *Matcher {
 		NotMsg: "not any",
 	}
 	m.Match = func(got interface{}) Result {
-		return NewResult(true, got, m)
+		return NewResult(true, got, m.Msg)
 	}
 	return m
 }
@@ -274,7 +274,7 @@ func None() *Matcher {
 		NotMsg: "not none",
 	}
 	m.Match = func(got interface{}) Result {
-		return NewResult(false, got, m)
+		return NewResult(false, got, m.Msg)
 	}
 	return m
 }
@@ -318,17 +318,23 @@ func Not(val interface{}) *Matcher {
 // - For other data types, the two values x and y are equal if
 //   reflect.DeepEqual(x, y)
 func EQ(want interface{}) *Matcher {
+	wantStr := describe(want)
 	m := &Matcher{
 		isEqual: true,
-		Msg:     fmt.Sprintf("%s", describe(want)),
-		NotMsg:  fmt.Sprintf("is != %s", describe(want)),
+		Msg:     wantStr,
+		NotMsg:  "is != " + wantStr,
 	}
 	m.Match = func(got interface{}) Result {
 		c, err := compare(got, want)
 		if err != nil {
 			return NewErrorf(got, m.Msg+": "+err.Error())
 		}
-		return NewResult(c == cEQ, got, m)
+		r := NewResult(c == cEQ, got, m.Msg)
+		gotStr := describe(got)
+		if r.status != Match && len(wantStr) >= 40 && len(gotStr) >= 40 {
+			r.extra = diffStrings(got, want)
+		}
+		return r
 	}
 	return m
 }
@@ -354,9 +360,9 @@ func totalOrderPredicate(
 			return NewErrorf(got, msg+": %s and %s are not comparable", describeVerbose(got), describeVerbose(want))
 		}
 		if cond(c) {
-			return NewResult(true, got, m)
+			return NewResult(true, got, m.Msg)
 		}
-		return NewResult(false, got, m)
+		return NewResult(false, got, m.Msg)
 	}
 	return m
 }
@@ -440,12 +446,12 @@ func MapContains(key, val interface{}) *Matcher {
 				val := gotV.MapIndex(key)
 				r = wantVal.Match(val.Interface())
 				if r.status == Match {
-					return NewResult(true, got, m)
+					return NewResult(true, got, m.Msg)
 				}
 			}
 			i++
 		}
-		return NewResult(false, got, m)
+		return NewResult(false, got, m.Msg)
 	}
 	return m
 }
@@ -487,7 +493,7 @@ func Each(w interface{}) *Matcher {
 				return r.wrap(got, m, fmt.Sprintf("whose element #%d doesn't match", i))
 			}
 		}
-		return NewResult(true, got, m)
+		return NewResult(true, got, m.Msg)
 	}
 	return m
 }
@@ -524,10 +530,10 @@ func Contains(w interface{}) *Matcher {
 				return r
 			}
 			if r.status == Match {
-				return NewResult(true, got, m)
+				return NewResult(true, got, m.Msg)
 			}
 		}
-		return NewResult(false, got, m)
+		return NewResult(false, got, m.Msg)
 	}
 	return m
 }
@@ -579,8 +585,8 @@ func elementsAreImpl(label string, wants []*Matcher) *Matcher {
 		msgs[i] = wants[i].Msg
 	}
 	m := &Matcher{
-		Msg:    fmt.Sprintf("elements are [%s]", strings.Join(msgs, ", ")),
-		NotMsg: fmt.Sprintf("at least one element is not (%s)", strings.Join(msgs, ", ")),
+		Msg:    fmt.Sprintf("elements are [%s]", strings.Join(msgs, " ")),
+		NotMsg: fmt.Sprintf("at least one element is not (%s)", strings.Join(msgs, " ")),
 	}
 	m.Match = func(got interface{}) Result {
 		gotV := reflect.ValueOf(got)
@@ -603,7 +609,7 @@ func elementsAreImpl(label string, wants []*Matcher) *Matcher {
 				return r.wrap(got, m, fmt.Sprintf("whose element #%d doesn't match", i))
 			}
 		}
-		return NewResult(true, got, m)
+		return NewResult(true, got, m.Msg)
 	}
 	return m
 }
@@ -768,10 +774,10 @@ func unorderedElementsAreImpl(label string, wants []*Matcher) *Matcher {
 				}
 			}
 			if ok {
-				return NewResult(true, got, m)
+				return NewResult(true, got, m.Msg)
 			}
 		}
-		return NewResult(false, got, m)
+		return NewResult(false, got, m.Msg)
 	}
 	return m
 }
@@ -789,10 +795,10 @@ func AllOf(values ...interface{}) *Matcher {
 			case DomainError:
 				return r
 			case Mismatch:
-				return NewResult(false, got, m)
+				return NewResult(false, got, m.Msg)
 			}
 		}
-		return NewResult(true, got, m)
+		return NewResult(true, got, m.Msg)
 	}
 	return m
 }
@@ -807,10 +813,10 @@ func AnyOf(values ...interface{}) *Matcher {
 	m.Match = func(got interface{}) Result {
 		for _, sm := range matchers {
 			if r := sm.Match(got); r.status == Match {
-				return NewResult(true, got, m)
+				return NewResult(true, got, m.Msg)
 			}
 		}
-		return NewResult(false, got, m)
+		return NewResult(false, got, m.Msg)
 	}
 	return m
 }
@@ -857,12 +863,12 @@ func Zero() *Matcher {
 	}
 	m.Match = func(got interface{}) Result {
 		if got == nil {
-			return NewResult(true, got, m)
+			return NewResult(true, got, m.Msg)
 		}
 		if reflect.DeepEqual(got, reflect.Zero(reflect.TypeOf(got)).Interface()) {
-			return NewResult(true, got, m)
+			return NewResult(true, got, m.Msg)
 		}
-		return NewResult(false, got, m)
+		return NewResult(false, got, m.Msg)
 	}
 	return m
 }
