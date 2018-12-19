@@ -99,7 +99,6 @@ func TestRunAt(t *testing.T) {
 }
 
 func TestIsRandom(t *testing.T) {
-	t.Skipf("Reenable after T1997 is fixed")
 	for _, tc := range reliableGenerators {
 		for _, significance := range []encryptiontest.Significance{
 			encryptiontest.FivePercent,
@@ -107,7 +106,7 @@ func TestIsRandom(t *testing.T) {
 			encryptiontest.PointTwoPercent,
 		} {
 			attempts := 0
-			flakyAttempts := 2
+			flakyAttempts := 4
 			for {
 				var failed, expectedFailures, iterations int
 				var israndom bool
@@ -138,7 +137,7 @@ func TestIsRandom(t *testing.T) {
 					// However, for now, we'll just stop the test failing when
 					// the stats don't work out!
 					if !tc.flaky || attempts >= flakyAttempts {
-						t.Errorf("%v: FAIL: got %v, want %v", tc.name, got, want)
+						t.Errorf("%v: FAIL: got %v, want %v (after %v attempts)", tc.name, got, want, attempts)
 					}
 					attempts++
 				} else {
