@@ -54,4 +54,5 @@ func TestGetFilePathInBazelEnv(t *testing.T) {
 	defer setEnvWithReset(t, "TEST_WORKSPACE", bazelSpace)()
 
 	require.Equal(t, filepath.Join(bazelSrc, bazelSpace, "//foo/bar/baz"), testutil.GetFilePath("//foo/bar/baz"))
+	require.Equal(t, filepath.Join(bazelSrc, bazelSpace, "external/ws", "//foo/bar/baz"), testutil.GetFilePath("@ws//foo/bar/baz"))
 }

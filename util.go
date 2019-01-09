@@ -84,17 +84,32 @@ func NoCleanupOnError(t testing.TB, cleanup func(), args ...interface{}) {
 // If that fails, it returns the input path unchanged.
 //
 // relativePath will need to be prefixed with a Bazel workspace designation if
-// the paths go across workspaces. Only certain workspaces are recognized when
-// running tests for the Go tool.  Add more workspaces as necessary in the map
-// below.
+// the paths go across workspaces.
 func GetFilePath(relativePath string) string {
+	var workspace string
+	if strings.HasPrefix(relativePath, "@") {
+		sep := strings.Index(relativePath, "/")
+		if sep == -1 {
+			workspace = relativePath[1:]
+			relativePath = ""
+		} else {
+			workspace = relativePath[1:sep]
+			relativePath = relativePath[sep:]
+		}
+	}
 	if strings.HasPrefix(relativePath, "//") {
 		relativePath = relativePath[1:]
 	}
 	if bazelPath, ok := os.LookupEnv("TEST_SRCDIR"); ok {
+		if workspace != "" {
+			relativePath = filepath.Join("external", workspace, relativePath)
+		}
 		return filepath.Join(bazelPath, os.Getenv("TEST_WORKSPACE"), relativePath)
 	}
 	if grailPath, ok := os.LookupEnv("GRAIL"); ok {
+		if workspace != "" {
+			panic("workspace not allowed when running with $GRAIL")
+		}
 		return filepath.Join(grailPath, relativePath)
 	}
 	panic("Unexpected test environment. Should be running with either $GRAIL or in a bazel build space.")
@@ -174,29 +189,44 @@ func GoExecutable(t testing.TB, path string) string {
 // GoExecutableEnv is like GoExecutable but allows environment variables
 // to be specified.
 func GoExecutableEnv(t testing.TB, path string, env []string) string {
-	re := regexp.MustCompile("^//go/src/(.*/([^/]+))/([^/]+)$")
+	re := regexp.MustCompile("^(@[^@/]+)?//(.*/([^/]+))/([^/]+)$")
 	match := re.FindStringSubmatch(path)
-	if match == nil || match[2] != match[3] {
-		t.Fatalf("%v: target must be of format \"//go/src/path/target/target\"",
+	if match == nil {
+		t.Fatalf("%v: path must be of format \"//path/package/binary\"",
 			path)
 	}
+	workspace, pkg, pkgName, binary := match[1], match[2], match[3], match[4]
+
 	if IsBazel() {
 		expandedPath := GetFilePath(path)
 		if _, err := os.Stat(expandedPath); err == nil {
 			return expandedPath
 		}
-		pattern := GetFilePath(fmt.Sprintf("//go/src/%s/*/%s", match[1], match[2]))
+		pattern := GetFilePath(fmt.Sprintf("%s//%s/*/%s", workspace, pkg, binary))
 		paths, err := filepath.Glob(pattern)
 		assert.NoError(t, err, "glob %v", pattern)
 		assert.EQ(t, len(paths), 1, "Pattern %s must match exactly one executable, but found %v", pattern, paths)
 		return paths[0]
 	}
-	pkg := match[1]
+
+	if workspace != "" {
+		t.Fatalf("%v: workspace can not be set when not under bazel", path)
+	}
+	if pkgName != binary {
+		t.Fatalf("%v: package name and binary must match", path)
+	}
+	if strings.HasPrefix(pkg, "go/src/") {
+		pkg = pkg[len("go/src/"):]
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("could not obtain current directory")
+	}
 	hashString := func(s string) string {
 		b := sha256.Sum256([]byte(s))
 		return fmt.Sprintf("%x", b[:16])
 	}
-	tempDir := fmt.Sprintf("/tmp/go_build/%s", hashString(os.Getenv("GOPATH")+pkg))
+	tempDir := filepath.Join(os.TempDir(), "go_build", hashString(wd+pkg))
 	os.MkdirAll(tempDir, 0700) // nolint: errcheck
 	xpath := filepath.Join(tempDir, filepath.Base(pkg))
 	cmd := exec.Command("go", "build", "-o", xpath, pkg)
