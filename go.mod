@@ -4,7 +4,6 @@ require (
 	github.com/aws/aws-sdk-go v1.14.25
 	github.com/davecgh/go-spew v1.1.1
 	github.com/grailbio/base v0.0.0
-	github.com/grailbio/v23/factories/grail v0.0.0 // indirect
 	github.com/stretchr/testify v1.2.2
 	golang.org/x/exp v0.0.0-20180625033341-f9fa0fefb1e1 // indirect
 	golang.org/x/sync v0.0.0-20181108010431-42b317875d0f
@@ -12,6 +11,8 @@ require (
 	gonum.org/v1/netlib v0.0.0-20181224185128-3431cf544c75 // indirect
 	v.io/x/lib v0.1.1
 )
+
+
 
 
 
