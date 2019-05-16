@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +25,12 @@ import (
 // awsContentSha256Key is the header used to store the sha256 of
 // a file's content in the grail.com/pipeline.
 const awsContentSha256Key = "Content-Sha256"
+
+func setFakeResponse(ctx aws.Context, req *request.Request, opts ...request.Option) {
+	req.SetContext(ctx)
+	req.HTTPResponse = &http.Response{}
+	req.ApplyOptions(opts...)
+}
 
 func sha256Digest(body []byte, meta map[string]*string) (string, error) {
 	bodySum := fmt.Sprintf("%x", sha256.Sum256(body))
@@ -357,8 +364,7 @@ func (c *Client) HeadObjectWithContext(
 	if err := c.startRequest("HeadObjectRequestWithContext", input); err != nil {
 		req.Error = err
 	}
-	req.SetContext(ctx)
-	req.ApplyOptions(opts...)
+	setFakeResponse(ctx, req, opts...)
 	return out, req.Send()
 }
 
@@ -388,8 +394,7 @@ func (c *Client) ListObjectsV2WithContext(
 	if err := c.startRequest("ListObjectsV2WithContext", input); err != nil {
 		req.Error = err
 	}
-	req.SetContext(ctx)
-	req.ApplyOptions(opts...)
+	setFakeResponse(ctx, req, opts...)
 	return out, req.Send()
 }
 
@@ -492,8 +497,7 @@ func (c *Client) PutObjectRequest(
 // PutObjectWithContext implements the corresponding s3iface.API method.
 func (c *Client) PutObjectWithContext(ctx aws.Context, input *s3.PutObjectInput, opts ...request.Option) (*s3.PutObjectOutput, error) {
 	req, out := c.PutObjectRequest(input)
-	req.SetContext(ctx)
-	req.ApplyOptions(opts...)
+	setFakeResponse(ctx, req, opts...)
 	return out, req.Send()
 }
 
@@ -505,8 +509,7 @@ func (c *Client) CreateMultipartUploadWithContext(
 		return nil, err
 	}
 	req, out := c.CreateMultipartUploadRequest(input)
-	req.SetContext(ctx)
-	req.ApplyOptions(opts...)
+	setFakeResponse(ctx, req, opts...)
 	return out, req.Send()
 }
 
@@ -519,8 +522,7 @@ func (c *Client) UploadPartWithContext(
 	}
 	req, out := c.UploadPartRequest(input)
 	req.Handlers.Unmarshal.Clear()
-	req.SetContext(ctx)
-	req.ApplyOptions(opts...)
+	setFakeResponse(ctx, req, opts...)
 	return out, req.Send()
 }
 
@@ -533,8 +535,7 @@ func (c *Client) UploadPartCopyWithContext(
 	}
 	req, out := c.UploadPartCopyRequest(input)
 	req.Handlers.Unmarshal.Clear()
-	req.SetContext(ctx)
-	req.ApplyOptions(opts...)
+	setFakeResponse(ctx, req, opts...)
 	return out, req.Send()
 }
 
@@ -547,8 +548,7 @@ func (c *Client) CompleteMultipartUploadWithContext(
 	}
 	req, out := c.CompleteMultipartUploadRequest(input)
 	req.Handlers.Unmarshal.Clear()
-	req.SetContext(ctx)
-	req.ApplyOptions(opts...)
+	setFakeResponse(ctx, req, opts...)
 	return out, req.Send()
 }
 
@@ -680,8 +680,7 @@ func (c *Client) AbortMultipartUploadWithContext(
 	ctx aws.Context, input *s3.AbortMultipartUploadInput,
 	opts ...request.Option) (*s3.AbortMultipartUploadOutput, error) {
 	req, out := c.AbortMultipartUploadRequest(input)
-	req.SetContext(ctx)
-	req.ApplyOptions(opts...)
+	setFakeResponse(ctx, req, opts...)
 	return out, req.Send()
 }
 
@@ -817,8 +816,7 @@ func (c *Client) DeleteObjectWithContext(ctx aws.Context, input *s3.DeleteObject
 	if err := c.startRequest("DeleteObjectRequestWithContext", input); err != nil {
 		req.Error = err
 	}
-	req.SetContext(ctx)
-	req.ApplyOptions(opts...)
+	setFakeResponse(ctx, req, opts...)
 	return out, req.Send()
 }
 
@@ -875,8 +873,7 @@ func (c *Client) GetObjectWithContext(
 	if err := c.startRequest("GetObjectWithContext", input); err != nil {
 		req.Error = err
 	}
-	req.SetContext(ctx)
-	req.ApplyOptions(opts...)
+	setFakeResponse(ctx, req, opts...)
 	return out, req.Send()
 }
 
@@ -898,6 +895,7 @@ func (c *Client) GetBucketLocationRequest(input *s3.GetBucketLocationInput) (req
 
 func (c *Client) GetBucketLocationWithContext(ctx aws.Context, input *s3.GetBucketLocationInput, opts ...request.Option) (*s3.GetBucketLocationOutput, error) {
 	req, out := c.GetBucketLocationRequest(input)
+	setFakeResponse(ctx, req, opts...)
 	return out, req.Send()
 }
 
