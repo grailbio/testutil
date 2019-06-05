@@ -796,6 +796,24 @@ func (c *Client) CopyObject(input *s3.CopyObjectInput) (*s3.CopyObjectOutput, er
 	return &s3.CopyObjectOutput{}, nil
 }
 
+// DeleteObjects removes a set of objects from the bucket
+func (c *Client) DeleteObjects(input *s3.DeleteObjectsInput) (*s3.DeleteObjectsOutput, error) {
+	if err := c.startRequest("DeleteObjects", input); err != nil {
+		return nil, err
+	}
+	if got, want := aws.StringValue(input.Bucket), c.bucket; got != want {
+		c.t.Errorf("DeleteObjects received unexpected bucket got: %s want %s", got, want)
+	}
+
+	for _, object := range input.Delete.Objects {
+		_, err := c.DeleteObject(&s3.DeleteObjectInput{Bucket: input.Bucket, Key: object.Key})
+		if err != nil {
+			return &s3.DeleteObjectsOutput{}, err
+		}
+	}
+	return &s3.DeleteObjectsOutput{}, nil
+}
+
 // DeleteObject removes an object from the bucket.
 func (c *Client) DeleteObject(input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
 	if err := c.startRequest("DeleteObject", input); err != nil {
