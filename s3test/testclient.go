@@ -640,7 +640,7 @@ func (c *Client) UploadPartCopyRequest(
 	}
 
 	c.m.Lock()
-	defer c.m.Lock()
+	defer c.m.Unlock()
 	r := c.uploads[uploadID]
 	if r == nil {
 		c.t.Errorf("UploadPartRequest: unknown upload ID %s", uploadID)
@@ -794,6 +794,15 @@ func (c *Client) CopyObject(input *s3.CopyObjectInput) (*s3.CopyObjectOutput, er
 		c.t.Errorf("CopyObjectRequest: %v", err)
 	}
 	return &s3.CopyObjectOutput{}, nil
+}
+
+func (c *Client) CopyObjectWithContext(ctx aws.Context, input *s3.CopyObjectInput, opts ...request.Option) (*s3.CopyObjectOutput, error) {
+	req, out := c.CopyObjectRequest(input)
+	if err := c.startRequest("CopyObjectRequestWithContext", input); err != nil {
+		req.Error = err
+	}
+	setFakeResponse(ctx, req, opts...)
+	return out, req.Send()
 }
 
 // DeleteObjects removes a set of objects from the bucket
