@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -131,6 +132,13 @@ func GetTmpDir() string {
 		panic(err.Error)
 	}
 	return tmpPath
+}
+
+// GetTmpPath returns a random file inside of the appropriate scratch directory.
+// The path is neither created nor cleaned up -- clients are expected to use do both.
+func GetTmpPath() string {
+	fileName := fmt.Sprintf("/tmp_file_%v", rand.Int())
+	return GetTmpDir() + fileName
 }
 
 // WriteTmp writes the supplied contents to a temporary file and returns the
