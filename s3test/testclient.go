@@ -888,6 +888,7 @@ func (c *Client) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error
 	output.ContentLength = aws.Int64(b.Content.Size())
 	output.LastModified = aws.Time(b.LastModified)
 	output.ETag = aws.String(b.ETag)
+	output.Metadata = fileMetadata(b)
 	return &output, nil
 }
 
