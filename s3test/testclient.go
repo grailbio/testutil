@@ -22,9 +22,9 @@ import (
 	"github.com/grailbio/testutil"
 )
 
-// awsContentSha256Key is the header used to store the sha256 of
+// awsContentSHA256Key is the header used to store the sha256 of
 // a file's content in the grail.com/pipeline.
-const awsContentSha256Key = "Content-Sha256"
+const awsContentSHA256Key = "Content-Sha256"
 
 func setFakeResponse(ctx aws.Context, req *request.Request, opts ...request.Option) {
 	req.SetContext(ctx)
@@ -32,16 +32,15 @@ func setFakeResponse(ctx aws.Context, req *request.Request, opts ...request.Opti
 	req.ApplyOptions(opts...)
 }
 
-func sha256Digest(body []byte, meta map[string]*string) (string, error) {
+func checkBodySHA256(body []byte, meta map[string]*string) error {
 	bodySum := fmt.Sprintf("%x", sha256.Sum256(body))
-	if sumBytes, ok := meta[awsContentSha256Key]; ok {
-		sum := aws.StringValue(sumBytes)
-		if sum != bodySum {
-			return "", fmt.Errorf("sha256 checksum mismatch: got %v, expect %v for %v",
-				sum, bodySum, string(body))
+	if headerSHA256, ok := meta[awsContentSHA256Key]; ok {
+		if *headerSHA256 != bodySum {
+			return fmt.Errorf("SHA256 checksum mismatch: got %v, expect %v",
+				*headerSHA256, bodySum)
 		}
 	}
-	return bodySum, nil
+	return nil
 }
 
 type multipartUploadStatus int
@@ -132,15 +131,16 @@ func parseByteRange(s string, contentLen int64) (int64, int64, error) {
 // FileContent stores the file content and the metadata.
 type FileContent struct {
 	Content      testutil.ContentAt
-	SHA256       string
+	Metadata     map[string]*string
 	LastModified time.Time
 	ETag         string
 }
 
-func fileMetadata(f FileContent) map[string]*string {
-	return map[string]*string{
-		awsContentSha256Key: aws.String(f.SHA256),
+func (f FileContent) SHA256() string {
+	if SHA256, ok := f.Metadata[awsContentSHA256Key]; ok {
+		return *SHA256
 	}
+	return ""
 }
 
 func (c *Client) newUploadID() string {
@@ -205,18 +205,32 @@ func (c *Client) MustGetFile(key string) FileContent {
 	return f
 }
 
-// SetFile updates the file contents and the metadata.
+// SetFile updates the file contents and adds sha256 to its metadata if non-empty.
+// TODO(swami): Replace with setFile and change all callers.
 func (c *Client) SetFile(key string, content []byte, sha256 string) {
 	c.SetFileContentAt(key, &testutil.ByteContent{content}, sha256)
 }
 
-// SetFileContentAt sets the file  with the given content provider and metadata.
-func (c *Client) SetFileContentAt(key string, content testutil.ContentAt, sha256 string) {
+// SetFileContentAt sets the file with the given content and adds sha256 to its metadata if non-empty.
+// TODO(swami): Replace with setFileContentAt and change all callers.
+func (c *Client) SetFileContentAt(key string, content testutil.ContentAt, SHA256 string) {
+	meta := make(map[string]*string)
+	if SHA256 != "" {
+		meta[awsContentSHA256Key] = aws.String(SHA256)
+	}
+	c.setFileContentAt(key, content, meta)
+}
+
+func (c *Client) setFile(key string, content []byte, metadata map[string]*string) {
+	c.setFileContentAt(key, &testutil.ByteContent{content}, metadata)
+}
+
+func (c *Client) setFileContentAt(key string, content testutil.ContentAt, metadata map[string]*string) {
 	c.m.Lock()
 	defer c.m.Unlock()
 	c.content[key] = FileContent{
 		Content:      content,
-		SHA256:       sha256,
+		Metadata:     metadata,
 		LastModified: time.Now(),
 		ETag:         content.Checksum(),
 	}
@@ -280,29 +294,41 @@ func (c *Client) setFileFromPartialContent(key string, uploadID string, parts []
 			delete(r.partial, *part.PartNumber)
 		}
 	}
-	sha, err := sha256Digest(buf, r.meta)
-	if err != nil {
+
+	if err := checkBodySHA256(buf, r.meta); err != nil {
 		panic(err)
 	}
 	content := &testutil.ByteContent{buf}
 	c.content[key] = FileContent{
 		Content:      content,
-		SHA256:       sha,
+		Metadata:     r.meta,
 		LastModified: time.Now(),
 		ETag:         content.Checksum(),
 	}
 	r.status = multipartUploadCompleted
 }
 
+// copyFile exhibits the same behavior as we expect from S3.
+// That is, by default all metadata is copied from src to dst unless
+// metadata is specified in the request in which case dst will only
+// reflect the one from the request.
+// See: https://docs.aws.amazon.com/AmazonS3/latest/dev/CopyingObjectsExamples.html
 func (c *Client) copyFile(src, dst string, meta map[string]*string) error {
 	c.m.Lock()
 	defer c.m.Unlock()
-	if sha256, ok := meta[awsContentSha256Key]; ok {
-		if sum := aws.StringValue(sha256); sum != c.content[src].SHA256 {
-			return fmt.Errorf("copyfile %s->%s: sha256 checksum mismatch: %s <-> %s", src, dst, sum, c.content[src].SHA256)
-		}
-	}
 	c.content[dst] = c.content[src]
+	if meta != nil {
+		fc := c.content[dst]
+		buf := make([]byte, fc.Content.Size())
+		if n, err := fc.Content.ReadAt(buf, 0); err != nil || int64(n) != fc.Content.Size() {
+			c.t.Fatalf("testclient.copyFile: contents of size %d read error: %d %v", fc.Content.Size(), n, err)
+		}
+		if err := checkBodySHA256(buf, meta); err != nil {
+			return err
+		}
+		fc.Metadata = meta
+		c.content[dst] = fc
+	}
 	return nil
 }
 
@@ -351,7 +377,7 @@ func (c *Client) HeadObject(
 		ContentLength: aws.Int64(f.Content.Size()),
 		LastModified:  aws.Time(f.LastModified),
 		ETag:          aws.String(f.ETag),
-		Metadata:      fileMetadata(f),
+		Metadata:      f.Metadata,
 	}
 	return output, nil
 }
@@ -486,11 +512,10 @@ func (c *Client) PutObjectRequest(
 	if err != nil {
 		c.t.Errorf("PutObjectRequest when reading input.Body: %s", err)
 	}
-	sha256, err := sha256Digest(body, input.Metadata)
-	if err != nil {
+	if err := checkBodySHA256(body, input.Metadata); err != nil {
 		c.t.Errorf("PutObjectRequest: checksum: %s", err)
 	}
-	c.SetFile(key, body, sha256)
+	c.setFile(key, body, input.Metadata)
 	return
 }
 
@@ -742,7 +767,7 @@ func (c *Client) GetObjectRequest(
 	}
 	output.LastModified = aws.Time(b.LastModified)
 	output.ETag = aws.String(b.ETag)
-	output.Metadata = fileMetadata(b)
+	output.Metadata = b.Metadata
 	return
 }
 
@@ -888,7 +913,7 @@ func (c *Client) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error
 	output.ContentLength = aws.Int64(b.Content.Size())
 	output.LastModified = aws.Time(b.LastModified)
 	output.ETag = aws.String(b.ETag)
-	output.Metadata = fileMetadata(b)
+	output.Metadata = b.Metadata
 	return &output, nil
 }
 
