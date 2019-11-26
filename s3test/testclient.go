@@ -518,6 +518,12 @@ func (c *Client) PutObjectRequest(
 	return
 }
 
+// PutObject implements the corresponding s3iface.API method.
+func (c *Client) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
+	req, out := c.PutObjectRequest(input)
+	return out, req.Send()
+}
+
 // PutObjectWithContext implements the corresponding s3iface.API method.
 func (c *Client) PutObjectWithContext(ctx aws.Context, input *s3.PutObjectInput, opts ...request.Option) (*s3.PutObjectOutput, error) {
 	req, out := c.PutObjectRequest(input)
