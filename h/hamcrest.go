@@ -873,6 +873,36 @@ func Zero() *Matcher {
 	return m
 }
 
+// FloatNear checks if the value is in range [want - maxDelta, want + maxDelta].
+//
+// Example:
+//   expect.That(t, 100.001, h.FloatNear(100, 0.1))
+func FloatNear(want, maxDelta float64) *Matcher {
+	if maxDelta < 0 {
+		panic("maxDelta < 0")
+	}
+	m := &Matcher{
+		Msg:    fmt.Sprintf("float is near %f within delta %f", want, maxDelta),
+		NotMsg: fmt.Sprintf("float is not near %f within delta %f", want, maxDelta),
+	}
+	m.Match = func(got interface{}) Result {
+		var v float64
+		switch got := got.(type) {
+		case float64:
+			v = got
+		case float32:
+			v = float64(got)
+		default:
+			return NewErrorf(got, "expect float")
+		}
+		if v >= want-maxDelta && v <= want+maxDelta {
+			return NewResult(true, got, m.Msg)
+		}
+		return NewResult(false, got, m.Msg)
+	}
+	return m
+}
+
 var (
 	comparatorMu = sync.Mutex{}
 	comparators  = map[reflect.Type]reflect.Value{}
@@ -964,6 +994,26 @@ func compare(x, y interface{}) (compareResult, error) {
 	return compareRec(reflect.ValueOf(x), reflect.ValueOf(y), visited)
 }
 
+func isIntKind(typ reflect.Type) bool {
+	k := typ.Kind()
+	return k == reflect.Int || k == reflect.Int8 || k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64
+}
+
+func isUintKind(typ reflect.Type) bool {
+	k := typ.Kind()
+	return k == reflect.Uint || k == reflect.Uint8 || k == reflect.Uint16 || k == reflect.Uint32 || k == reflect.Uint64
+}
+
+func isFloatKind(typ reflect.Type) bool {
+	k := typ.Kind()
+	return k == reflect.Float32 || k == reflect.Float64
+}
+
+func isComplexKind(typ reflect.Type) bool {
+	k := typ.Kind()
+	return k == reflect.Complex64 || k == reflect.Complex128
+}
+
 func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, error) {
 	if !xv.IsValid() {
 		if yv.IsValid() {
@@ -973,7 +1023,11 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 	}
 	xType := xv.Type()
 	yType := yv.Type()
-	if xType != yType {
+	if (xType != yType) &&
+		(!isIntKind(xType) || !isIntKind(yType)) &&
+		(!isUintKind(xType) || !isUintKind(yType)) &&
+		(!isFloatKind(xType) || !isFloatKind(yType)) &&
+		(!isComplexKind(xType) || !isComplexKind(yType)) {
 		return cEQ, fmt.Errorf("%+v(type:%v) and %+v(type:%v) are not comparable", xv, xType, yv, yType)
 	}
 
@@ -1014,8 +1068,8 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 		visited[v] = true
 	}
 
-	switch xType.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	switch {
+	case isIntKind(xType):
 		xi, yi := xv.Int(), yv.Int()
 		if xi < yi {
 			return cLT, nil
@@ -1024,7 +1078,7 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 			return cGT, nil
 		}
 		return cEQ, nil
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+	case isUintKind(xType):
 		xi, yi := xv.Uint(), yv.Uint()
 		if xi < yi {
 			return cLT, nil
@@ -1033,13 +1087,13 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 			return cGT, nil
 		}
 		return cEQ, nil
-	case reflect.Uintptr:
+	case xType.Kind() == reflect.Uintptr:
 		xi, yi := xv.Uint(), yv.Uint()
 		if xi == yi {
 			return cEQ, nil
 		}
 		return cNEQ, nil
-	case reflect.Float32, reflect.Float64:
+	case isFloatKind(xType):
 		xi, yi := xv.Float(), yv.Float()
 		if xi < yi {
 			return cLT, nil
@@ -1051,7 +1105,7 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 			return cEQ, nil
 		}
 		return cNEQ, nil // xi or yi is NaN
-	case reflect.String:
+	case xType.Kind() == reflect.String:
 		xi, yi := xv.String(), yv.String()
 		if xi < yi {
 			return cLT, nil
@@ -1060,19 +1114,19 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 			return cGT, nil
 		}
 		return cEQ, nil
-	case reflect.Complex64, reflect.Complex128:
+	case isComplexKind(xType):
 		xi, yi := xv.Complex(), yv.Complex()
 		if xi == yi {
 			return cEQ, nil
 		}
 		return cNEQ, nil
-	case reflect.Bool:
+	case xType.Kind() == reflect.Bool:
 		xi, yi := xv.Bool(), yv.Bool()
 		if xi == yi {
 			return cEQ, nil
 		}
 		return cNEQ, nil
-	case reflect.Slice, reflect.Array:
+	case xType.Kind() == reflect.Slice || xType.Kind() == reflect.Array:
 		if xv.Len() != yv.Len() {
 			return cNEQ, nil
 		}
@@ -1086,7 +1140,7 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 			}
 		}
 		return cEQ, nil
-	case reflect.Interface:
+	case xType.Kind() == reflect.Interface:
 		if xv.IsNil() || yv.IsNil() {
 			if xv.IsNil() == yv.IsNil() {
 				return cEQ, nil
@@ -1094,17 +1148,17 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 			return cNEQ, nil
 		}
 		return compareRec(xv.Elem(), yv.Elem(), visited)
-	case reflect.Ptr:
+	case xType.Kind() == reflect.Ptr:
 		if xv.Pointer() == yv.Pointer() {
 			return cEQ, nil
 		}
 		return compareRec(xv.Elem(), yv.Elem(), visited)
-	case reflect.Chan:
+	case xType.Kind() == reflect.Chan:
 		if xv.Pointer() == yv.Pointer() {
 			return cEQ, nil
 		}
 		return cNEQ, nil
-	case reflect.Struct:
+	case xType.Kind() == reflect.Struct:
 		for i, n := 0, xv.NumField(); i < n; i++ {
 			r, err := compareRec(xv.Field(i), yv.Field(i), visited)
 			if r != cEQ || err != nil {
@@ -1112,7 +1166,7 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 			}
 		}
 		return cEQ, nil
-	case reflect.Map:
+	case xType.Kind() == reflect.Map:
 		if xv.IsNil() != yv.IsNil() {
 			return cNEQ, nil
 		}
@@ -1134,7 +1188,7 @@ func compareRec(xv, yv reflect.Value, visited map[visit]bool) (compareResult, er
 			}
 		}
 		return cEQ, nil
-	case reflect.Func:
+	case xType.Kind() == reflect.Func:
 		if xv.IsNil() && yv.IsNil() {
 			return cEQ, nil
 		}

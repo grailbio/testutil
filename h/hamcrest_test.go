@@ -76,6 +76,25 @@ func TestExpect(t *testing.T) {
 		"(?s)contains element that has substr")
 }
 
+func TestCompareScalarsOfDifferentTypes(t *testing.T) {
+	expect.EQ(t, int(10), int64(10))
+	expect.LT(t, int(9), int64(10))
+	expect.EQ(t, int(10), int8(10))
+	expect.EQ(t, uint(10), uint64(10))
+	expect.EQ(t, uint(10), uint16(10))
+	expect.EQ(t, float32(10.0), float64(10.0))
+	expect.EQ(t, complex(float32(10.0), float32(11.0)), complex(float64(10.0), float64(11.0)))
+	expect.Regexp(t, h.EQ(int(10)).Match(uint64(10)),
+		`Error:.*are not comparable`)
+}
+
+func TestFloatNear(t *testing.T) {
+	expect.That(t, 10.0, h.FloatNear(10.5, 0.5))
+	expect.That(t, 10.0, h.FloatNear(9.5, 0.5))
+	expect.That(t, 10.0, h.Not(h.FloatNear(9.49, 0.5)))
+	expect.That(t, 10.0, h.Not(h.FloatNear(10.51, 0.5)))
+}
+
 func TestEach(t *testing.T) {
 	expect.Regexp(t, h.Each(h.HasSubstr("a")).Match([]string{"ab", "cd"}).String(),
 		"(?s)whose element #1 doesn't match.*every element in sequence has substr")
