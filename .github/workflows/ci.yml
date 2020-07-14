@@ -21,7 +21,7 @@ jobs:
     - name: Check out
       uses: actions/checkout@v2
     - name: Test
-      run: go test -v -short ./...
+      run: go test -short ./...
   golangci:
     name: Lint
     runs-on: ubuntu-latest
