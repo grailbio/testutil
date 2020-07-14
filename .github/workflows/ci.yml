@@ -9,6 +9,7 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         go: [1.12, 1.13, 1.14]
     name: Build & Test
