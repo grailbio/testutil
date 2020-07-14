@@ -99,6 +99,9 @@ func TestRunAt(t *testing.T) {
 }
 
 func TestIsRandom(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
 	for _, tc := range reliableGenerators {
 		for _, significance := range []encryptiontest.Significance{
 			encryptiontest.FivePercent,
