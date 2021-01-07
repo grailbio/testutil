@@ -25,6 +25,10 @@ import (
 // a file's content in the grail.com/pipeline.
 const awsContentSHA256Key = "Content-Sha256"
 
+// s3DeleteKeyLimit is the max number of keys supported by AWS per batch delete operation.
+// As per AWS: https://docs.aws.amazon.com/AmazonS3/latest/dev/DeletingObjects.html
+const s3DeleteKeyLimit = 1000
+
 func setFakeResponse(ctx aws.Context, req *request.Request, opts ...request.Option) {
 	req.SetContext(ctx)
 	req.HTTPResponse = &http.Response{}
@@ -884,6 +888,37 @@ func (c *Client) DeleteObjectRequest(input *s3.DeleteObjectInput) (req *request.
 	req.Handlers.Send.Clear()
 	req.Handlers.Clear()
 	return
+}
+
+// DeleteObjectWithContext is the same as DeleteObject, but allows passing a
+// context and options.
+func (c *Client) DeleteObjectsWithContext(ctx aws.Context, input *s3.DeleteObjectsInput, opts ...request.Option) (*s3.DeleteObjectsOutput, error) {
+	n := len(input.Delete.Objects)
+	if n > s3DeleteKeyLimit {
+		return nil, fmt.Errorf("too many objects %d", n)
+	}
+	var out s3.DeleteObjectsOutput
+	out.Deleted = make([]*s3.DeletedObject, n)
+	out.Errors = make([]*s3.Error, n)
+	for i, o := range input.Delete.Objects {
+		r, err := c.DeleteObjectWithContext(ctx, &s3.DeleteObjectInput{
+			Bucket:                    input.Bucket,
+			BypassGovernanceRetention: input.BypassGovernanceRetention,
+			Key:                       o.Key,
+			MFA:                       input.MFA,
+			RequestPayer:              input.RequestPayer,
+			VersionId:                 o.VersionId,
+		}, opts...)
+		if err != nil {
+			out.Errors[i] = &s3.Error{Message: aws.String(err.Error())}
+			continue
+		}
+		out.Deleted[i] = &s3.DeletedObject{
+			DeleteMarker: r.DeleteMarker,
+			Key:          o.Key,
+		}
+	}
+	return &out, nil
 }
 
 // GetObject retrieves an object from the bucket.
