@@ -17,6 +17,10 @@ var reliableGenerators = []generatorTestCase{
 	// small amounts of random data (<160bytes) is fine, but it's not well
 	// suited to this test.
 	//	{"cryptorand", cryptorand, false, true,true},
-	{"divx", divx, true, false, false},
-	{"zip", zip, true, false, false},
+
+	// divx/zip require a precomputed random file to test with
+	// due to lfs limits this file is no longer being servered by grailbio
+	// The file may be downloaded via LFS from 39b3ca80f18 or earlier
+	//{"divx", divx, true, false, false},
+	//{"zip", zip, true, false, false},
 }
