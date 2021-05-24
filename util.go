@@ -199,11 +199,12 @@ func GoExecutable(t testing.TB, path string) string {
 func GoExecutableEnv(t testing.TB, path string, env []string) string {
 	re := regexp.MustCompile("^(@[^@/]+)?//(.*/([^/]+))/([^/]+)$")
 	match := re.FindStringSubmatch(path)
-	if match == nil {
+	// staticcheck doesn't realize that t.Fatalf stops execution.
+	if match == nil { //nolint:staticcheck
 		t.Fatalf("%v: path must be of format \"//path/package/binary\"",
 			path)
 	}
-	workspace, pkg, pkgName, binary := match[1], match[2], match[3], match[4]
+	workspace, pkg, pkgName, binary := match[1], match[2], match[3], match[4] //nolint:staticcheck
 
 	if IsBazel() {
 		expandedPath := GetFilePath(path)
@@ -223,9 +224,7 @@ func GoExecutableEnv(t testing.TB, path string, env []string) string {
 	if pkgName != binary {
 		t.Fatalf("%v: package name and binary must match", path)
 	}
-	if strings.HasPrefix(pkg, "go/src/") {
-		pkg = pkg[len("go/src/"):]
-	}
+	pkg = strings.TrimPrefix(pkg, "go/src/")
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("could not obtain current directory")

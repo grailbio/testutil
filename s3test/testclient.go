@@ -211,7 +211,7 @@ func (c *Client) MustGetFile(key string) FileContent {
 // SetFile updates the file contents and adds sha256 to its metadata if non-empty.
 // TODO(swami): Replace with setFile and change all callers.
 func (c *Client) SetFile(key string, content []byte, sha256 string) {
-	c.SetFileContentAt(key, &testutil.ByteContent{content}, sha256)
+	c.SetFileContentAt(key, &testutil.ByteContent{Data: content}, sha256)
 }
 
 // SetFileContentAt sets the file with the given content and adds sha256 to its metadata if non-empty.
@@ -225,7 +225,7 @@ func (c *Client) SetFileContentAt(key string, content testutil.ContentAt, SHA256
 }
 
 func (c *Client) setFile(key string, content []byte, metadata map[string]*string) {
-	c.setFileContentAt(key, &testutil.ByteContent{content}, metadata)
+	c.setFileContentAt(key, &testutil.ByteContent{Data: content}, metadata)
 }
 
 func (c *Client) setFileContentAt(key string, content testutil.ContentAt, metadata map[string]*string) {
@@ -301,7 +301,7 @@ func (c *Client) setFileFromPartialContent(key string, uploadID string, parts []
 	if err := checkBodySHA256(buf, r.meta); err != nil {
 		panic(err)
 	}
-	content := &testutil.ByteContent{buf}
+	content := &testutil.ByteContent{Data: buf}
 	c.content[key] = FileContent{
 		Content:      content,
 		Metadata:     r.meta,
@@ -633,7 +633,7 @@ func (c *Client) UploadPartRequest(
 	}
 	r.partial[aws.Int64Value(input.PartNumber)] = body
 
-	content := testutil.ByteContent{body}
+	content := testutil.ByteContent{Data: body}
 	output.SetETag(content.Checksum())
 	return req, output
 }
@@ -678,7 +678,7 @@ func (c *Client) UploadPartCopyRequest(
 		return
 	}
 	r.partial[aws.Int64Value(input.PartNumber)] = data
-	content := testutil.ByteContent{data}
+	content := testutil.ByteContent{Data: data}
 	output.SetCopyPartResult(&s3.CopyPartResult{
 		ETag: aws.String(content.Checksum()),
 	})

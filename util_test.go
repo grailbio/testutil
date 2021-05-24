@@ -33,7 +33,6 @@ func clearEnvWithReset(t *testing.T, key string) func() {
 	return func() {
 		if hasValue {
 			os.Setenv(key, origValue)
-		} else {
 		}
 	}
 }

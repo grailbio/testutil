@@ -75,7 +75,7 @@ func divx(nbytes int) []byte {
 }
 
 func ascendingBytes(nbytes int) []byte {
-	b := make([]byte, nbytes, nbytes)
+	b := make([]byte, nbytes)
 	v := byte(0)
 	for i := 0; i < nbytes; i++ {
 		b[i] = v
@@ -119,7 +119,7 @@ func cryptorand(nbytes int) []byte {
 
 func pseudorand(nbytes int) []byte {
 	rnd := mrand.New(mrand.NewSource(time.Now().Unix()))
-	b := make([]byte, nbytes, nbytes)
+	b := make([]byte, nbytes)
 	for i := 0; i < nbytes; i++ {
 		b[i] = byte((rnd.Int() & 0xff00) >> 8)
 	}
