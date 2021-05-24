@@ -131,7 +131,7 @@ func ExampleHasPrefix() {
 func ExampleTrue() {
 	t := &T{}
 	assert.True(t, true)
-	assert.True(t, 1 == 1)
+	assert.True(t, 1 == 1) //nolint:staticcheck
 	// Output:
 }
 

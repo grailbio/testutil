@@ -131,7 +131,7 @@ func ExampleHasPrefix() {
 func ExampleTrue() {
 	t := &T{}
 	expect.True(t, true)
-	expect.True(t, 1 == 1)
+	expect.True(t, 1 == 1) //nolint:staticcheck
 	// Output:
 }
 

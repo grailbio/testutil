@@ -125,7 +125,6 @@ func (s Significance) String() string {
 		return "5.0%"
 	default:
 		panic("unreachable")
-		return ""
 	}
 }
 
@@ -179,7 +178,6 @@ func RunAtSignificanceLevel(significance Significance, fn func(s Significance) b
 		expectedFailures = 10
 	default:
 		panic(fmt.Sprintf("unrecognised significance level: %v", significance))
-		return
 	}
 	for i := 0; i < iterations; i++ {
 		if !fn(significance) {

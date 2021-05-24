@@ -81,6 +81,6 @@ func TestData(t *testing.T) {
 			}
 		}
 
-		fmt.Fprintf(os.Stderr, "TestData: %v, done: %v\n", tc.name, time.Now().Sub(then))
+		fmt.Fprintf(os.Stderr, "TestData: %v, done: %v\n", tc.name, time.Since(then))
 	}
 }
