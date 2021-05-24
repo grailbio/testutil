@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: [1.12, 1.13, 1.14]
+        go: [1.13, 1.14, 1.15]
     name: Build & Test
     runs-on: ubuntu-latest
     steps:
