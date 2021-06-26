@@ -19,10 +19,26 @@ jobs:
       uses: actions/setup-go@v2
       with:
         go-version: ${{ matrix.go }}
+
     - name: Check out
       uses: actions/checkout@v2
+
+    - name: Configure AWS credentials from Test account
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.GRAILBIO_TESTITIL_TESTDATA_AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.GRAILBIO_TESTITIL_TESTDATA_AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Copy files to the test website with the AWS CLI
+      run: |
+        aws s3 sync s3://grailbio-testutil-testdata/encryptiontest/testdata/ .
+
     - name: Test
-      run: go test -short ./...
+      run: go test ./...
+      with:
+        ci: "GRAIL-CI"
+
   golangci:
     name: Lint
     runs-on: ubuntu-latest

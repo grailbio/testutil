@@ -38,6 +38,11 @@ func TestData(t *testing.T) {
 	if testing.Short() {
 		t.Skip()
 	}
+
+	if os.Getenv("CI") != "GRAIL-CI" {
+		t.Skip("Skipping testing random number generators unless run in GRAIL CI environment.")
+	}
+
 	sh := gosh.NewShell(t)
 	defer testutil.NoCleanupOnError(t, sh.Cleanup)
 
