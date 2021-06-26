@@ -35,9 +35,9 @@ jobs:
         aws s3 sync s3://grailbio-testutil-testdata/encryptiontest/testdata/ .
 
     - name: Test
+      env:
+        CI: "GRAIL-CI"
       run: go test ./...
-      with:
-        ci: "GRAIL-CI"
 
   golangci:
     name: Lint
