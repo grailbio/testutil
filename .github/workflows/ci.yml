@@ -42,7 +42,7 @@ jobs:
     - name: Test
       env:
         CI: "GRAIL-CI"
-      run: go test ./...
+      run: go test -timeout 60m ./...
 
   golangci:
     name: Lint
