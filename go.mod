@@ -1,5 +1,7 @@
 module github.com/grailbio/testutil
 
+go 1.16
+
 require (
 	github.com/aws/aws-sdk-go v1.23.22
 	github.com/creack/pty v1.1.9 // indirect
