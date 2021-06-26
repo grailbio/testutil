@@ -20,6 +20,11 @@ jobs:
       with:
         go-version: ${{ matrix.go }}
 
+    - name: Install dieharder
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install dieharder
+
     - name: Check out
       uses: actions/checkout@v2
 
