@@ -37,7 +37,7 @@ jobs:
 
     - name: Copy files to the test website with the AWS CLI
       run: |
-        aws s3 sync s3://grailbio-testutil-testdata/encryptiontest/testdata/ .
+        aws s3 sync --no-progress s3://grailbio-testutil-testdata/ ./
 
     - name: Test
       env:
