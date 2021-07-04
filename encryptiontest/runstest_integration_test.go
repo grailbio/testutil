@@ -27,7 +27,7 @@ func dieharder(t *testing.T, sh *gosh.Shell, name string, data []byte) (string, 
 		cmd := sh.Cmd(cl[0], cl[1:]...)
 		cmd.SetStdinReader(bytes.NewReader(data))
 		output := cmd.CombinedOutput()
-		if !strings.Contains(output, "PASSED") || strings.Contains(output, "FAILED") {
+		if !strings.Contains(output, "PASSED") || strings.Contains(output, "FAILED") ) {
 			return output, false
 		}
 	}
@@ -42,10 +42,6 @@ func TestData(t *testing.T) {
 	if os.Getenv("CI") != "GRAIL-CI" {
 		t.Skip("Skipping testing random number generators unless run in GRAIL CI environment.")
 	}
-
-	sh := gosh.NewShell(t)
-	defer testutil.NoCleanupOnError(t, sh.Cleanup)
-
 	// Test that dieharder and our runstest agree.
 	for _, tc := range reliableGenerators {
 		then := time.Now()
@@ -60,17 +56,25 @@ func TestData(t *testing.T) {
 		if !tc.fixed {
 			_, _, _, dieharderResult = encryptiontest.RunAtSignificanceLevel(significance,
 				func(s encryptiontest.Significance) bool {
+					sh := gosh.NewShell(t)
+					defer testutil.NoCleanupOnError(t, sh.Cleanup)
+
 					data := tc.generator(dataSize)
 					out, result := dieharder(t, sh, tc.name, data)
 					dieharderOutput += out
 					return result
 				})
+
 			_, _, _, runstestResult = encryptiontest.RunAtSignificanceLevel(significance,
 				func(s encryptiontest.Significance) bool {
 					data := tc.generator(dataSize)
 					return encryptiontest.IsRandom(data, s)
 				})
+
 		} else {
+			sh := gosh.NewShell(t)
+			defer testutil.NoCleanupOnError(t, sh.Cleanup)
+
 			data := tc.generator(dataSize)
 			dieharderOutput, dieharderResult = dieharder(t, sh, tc.name, data)
 			runstestResult = encryptiontest.IsRandom(data, significance)
