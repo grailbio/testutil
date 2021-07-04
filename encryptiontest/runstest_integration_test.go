@@ -27,7 +27,7 @@ func dieharder(t *testing.T, sh *gosh.Shell, name string, data []byte) (string, 
 		cmd := sh.Cmd(cl[0], cl[1:]...)
 		cmd.SetStdinReader(bytes.NewReader(data))
 		output := cmd.CombinedOutput()
-		if !strings.Contains(output, "PASSED") || strings.Contains(output, "FAILED") ) {
+		if !strings.Contains(output, "PASSED") || strings.Contains(output, "FAILED") {
 			return output, false
 		}
 	}
