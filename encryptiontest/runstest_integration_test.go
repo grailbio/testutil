@@ -110,7 +110,7 @@ func TestData(t *testing.T) {
 				break
 			}
 
-			fmt.Fprintf(os.Stderr, "TestData: %v(%v), failed iteration: %v\n", tc.name, attempts, time.Now().Sub(then))
+			fmt.Fprintf(os.Stderr, "TestData: %v(%v), failed iteration: %v\n", tc.name, attempts, time.Since(then))
 		}
 		fmt.Fprintf(os.Stderr, "TestData: %v(%v), done: %v\n", tc.name, attempts, time.Since(then))
 	}
