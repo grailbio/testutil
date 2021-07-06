@@ -103,6 +103,10 @@ func TestIsRandom(t *testing.T) {
 		t.Skip()
 	}
 	for _, tc := range reliableGenerators {
+		if os.Getenv("CI") != "GRAIL-CI" && tc.grailOnly {
+			t.Skip("Skipping testing of a generator that depends on data from the GRAIL CI environment.")
+		}
+
 		for _, significance := range []encryptiontest.Significance{
 			encryptiontest.FivePercent,
 			encryptiontest.OnePercent,
