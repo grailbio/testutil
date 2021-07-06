@@ -23,6 +23,7 @@ type generatorTestCase struct {
 	fixed     bool
 	random    bool
 	flaky     bool
+	grailOnly bool
 }
 
 type generatorFn func(nbytes int) []byte

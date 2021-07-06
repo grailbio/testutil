@@ -7,16 +7,21 @@
 package encryptiontest_test
 
 var reliableGenerators = []generatorTestCase{
-	{"ascendingDecimal", ascendingDecimal, true, false, false},
-	{"ascendingHex", ascendingHex, true, false, false},
-	{"ascendingBytes", ascendingBytes, true, false, false},
-	{"pesudorand", pseudorand, false, true, false},
+	{"ascendingDecimal", ascendingDecimal, true, false, false, false},
+	{"ascendingHex", ascendingHex, true, false, false, false},
+	{"ascendingBytes", ascendingBytes, true, false, false, false},
+	{"pesudorand", pseudorand, false, true, false, false},
 	// cryptorand on mac isn't suitable for generating large amounts of
 	// random data. There is a theoretical exploit, but it's not clear
 	// it's practical. For our purposes, using cryptorand to generate
 	// small amounts of random data (<160bytes) is fine, but it's not well
 	// suited to this test.
-	//	{"cryptorand", cryptorand, false, true,true},
-	{"divx", divx, true, false, false},
-	{"zip", zip, true, false, false},
+	//	{"cryptorand", cryptorand, false, true,true, false},
+
+	// divx/zip require a precomputed random file to test with
+	// due to lfs limits this file is no longer being servered by grailbio
+	// The file may be downloaded via LFS from 39b3ca80f18 or
+	// from the S3 bucket s3://grailbio-testutil-testdata/
+	{"divx", divx, true, false, false, true},
+	{"zip", zip, true, false, false, true},
 }
