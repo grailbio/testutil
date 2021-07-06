@@ -5,6 +5,7 @@
 package encryptiontest_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
